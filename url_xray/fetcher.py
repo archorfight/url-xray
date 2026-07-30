@@ -1,6 +1,7 @@
 """Fetch and analyze URL data — type detection, content extraction, tech probing."""
 
 import re
+import os
 import socket
 import json
 from datetime import datetime
@@ -362,8 +363,14 @@ def fetch_github_info(url: str) -> dict:
     api_error = None
 
     try:
+        gh_headers = {"Accept": "application/vnd.github+json"}
+        # Optional: use GITHUB_TOKEN for higher rate limit (5000/hr vs 60/hr)
+        gh_token = os.environ.get("GITHUB_TOKEN")
+        if gh_token:
+            gh_headers["Authorization"] = f"Bearer {gh_token}"
+        
         with httpx.Client(timeout=15, follow_redirects=True) as client:
-            resp = client.get(api_url, headers={"Accept": "application/vnd.github+json"})
+            resp = client.get(api_url, headers=gh_headers)
 
             # Check for rate limit
             remaining = resp.headers.get("X-RateLimit-Remaining", "")
