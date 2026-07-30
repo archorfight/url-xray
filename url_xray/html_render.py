@@ -26,7 +26,11 @@ def _md_to_html(md: str) -> str:
         # Links first (capture before escape)
         link_ph = []
         def _cap_link(m):
-            link_ph.append(f'<a href="{esc(m.group(2))}" target="_blank" rel="noopener">{esc(m.group(1))}</a>')
+            href = m.group(2)
+            # Only allow http, https, mailto — reject javascript:, data:, etc.
+            if not re.match(r'^(https?://|mailto:)', href, re.IGNORECASE):
+                return esc(m.group(1))  # render as plain text, drop dangerous link
+            link_ph.append(f'<a href="{esc(href)}" target="_blank" rel="noopener">{esc(m.group(1))}</a>')
             return f"\x00L{len(link_ph)-1}\x00"
         text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _cap_link, text)
         text = esc(text)
@@ -104,10 +108,12 @@ def _md_to_html(md: str) -> str:
         # Ordered list
         m = re.match(r"^(\d+)\.\s+(.+)", line)
         if m:
+            if in_list:
+                out.append("</ul>")
+                in_list = False
             if not in_olist:
                 out.append("<ol>")
                 in_olist = True
-            in_list = False
             out.append(f"<li>{inline(m.group(2))}</li>")
             i += 1
             continue
@@ -118,10 +124,12 @@ def _md_to_html(md: str) -> str:
         # Bullet list
         m = re.match(r"^[-*]\s+(.+)", line)
         if m:
+            if in_olist:
+                out.append("</ol>")
+                in_olist = False
             if not in_list:
                 out.append("<ul>")
                 in_list = True
-            in_olist = False
             content = m.group(1)
             content = re.sub(r"^\[ \]\s*", "\u2610 ", content)
             content = re.sub(r"^\[x\]\s*", "\u2611 ", content, flags=re.IGNORECASE)

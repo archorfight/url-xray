@@ -66,6 +66,7 @@ Environment variables (or .env file):
     )
     parser.add_argument("--lang", choices=["zh", "en"], default="zh", help="Report language: zh (default) or en")
     parser.add_argument("--format", choices=["md", "html"], default="html", help="Output format: html (default, styled) or md (plain markdown)")
+    parser.add_argument("--type", choices=["auto", "website", "article", "product", "github"], default="auto", help="URL type override: auto (default), website, article, product, or github")
     parser.add_argument("--stdout", action="store_true", help="Print report to stdout instead of saving file")
     parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output")
 
@@ -87,7 +88,10 @@ Environment variables (or .env file):
     if not args.quiet:
         console.print(BANNER, style="cyan")
 
+    # Determine type for display
     url_type = detect_type(args.url)
+    if args.type != "auto":
+        url_type = args.type
     type_emoji = {
         "website": "🌐",
         "article": "📰",
@@ -96,7 +100,8 @@ Environment variables (or .env file):
     }.get(url_type, "🔗")
 
     if not args.quiet:
-        console.print(f"\n{type_emoji} Detected type: [bold]{url_type}[/bold]")
+        type_source_label = "manual override" if args.type != "auto" else "auto-detected"
+        console.print(f"\n{type_emoji} Type: [bold]{url_type}[/bold] ({type_source_label})")
         console.print(f"🔗 URL: {args.url}\n")
 
     # Run analysis
@@ -118,6 +123,7 @@ Environment variables (or .env file):
             base_url=args.base_url,
             model=args.model,
             lang=args.lang,
+            url_type_override=args.type if args.type != "auto" else None,
         )
 
         progress.update(task, description="Generating report...")
