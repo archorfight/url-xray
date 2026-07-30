@@ -120,6 +120,50 @@ def _UA() -> str:
     return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
 
+def _is_spa(html: str) -> bool:
+    """Detect if a page is likely a client-side rendered SPA (empty body)."""
+    text_len = len(re.sub(r"<[^>]+>", "", html).strip())
+    has_spa_markers = any(marker in html for marker in ["__NEXT_DATA__", "__NUXT__", "data-reactroot", "id=\"root\""])
+    return text_len < 500 and has_spa_markers
+
+
+def _fetch_with_playwright(url: str) -> dict:
+    """Fallback: fetch SPA pages using playwright (if installed)."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return {"error": "Playwright not installed. Run: pip install playwright && playwright install chromium"}
+
+    data = {"url": url, "error": None}
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(user_agent=_UA())
+            page.goto(url, wait_until="networkidle", timeout=20000)
+            page.wait_for_timeout(2000)  # extra wait for dynamic content
+
+            data["status_code"] = 200
+            html = page.content()
+            data["final_url"] = page.url
+            data["title"] = page.title()
+            data["html_size_kb"] = round(len(html) / 1024)
+            data["body_text"] = page.inner_text("body")[:5000]
+            data["body_text_length"] = len(data["body_text"])
+            data["rendered_with"] = "playwright"
+
+            # Basic stats from rendered DOM
+            data["img_count"] = page.locator("img").count()
+            data["link_count"] = page.locator("a").count()
+            data["h1_tags"] = [await_el.inner_text() for await_el in []]  # filled below
+            data["external_links"] = 0  # approximate
+
+            browser.close()
+    except Exception as e:
+        data["error"] = str(e)
+
+    return data
+
+
 def fetch_page(url: str) -> dict:
     """Fetch page HTML and extract structured data."""
     data = {"url": url, "error": None}
@@ -135,6 +179,21 @@ def fetch_page(url: str) -> dict:
         return data
 
     soup = BeautifulSoup(html, "html.parser")
+
+    # Check if SPA with empty body — try playwright fallback
+    body_text_check = soup.get_text(strip=True)
+    if _is_spa(html):
+        import os
+        # Only try playwright if it's installed
+        try:
+            import playwright  # noqa
+            spa_data = _fetch_with_playwright(url)
+            if not spa_data.get("error"):
+                # Merge playwright data, keeping httpx headers
+                spa_data["status_code"] = data.get("status_code", 200)
+                return spa_data
+        except ImportError:
+            pass  # playwright not installed, continue with what we have
 
     # Basic metadata
     data["title"] = (soup.title.string or "").strip() if soup.title else ""

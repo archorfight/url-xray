@@ -3,8 +3,8 @@
 import json
 import httpx
 
-# Prompt templates for each URL type
-PROMPTS = {
+# ============ Chinese Prompts ============
+PROMPTS_ZH = {
     "website": """你是专业的网站分析师。以下是网站「{title}」的技术数据和页面内容。
 
 技术数据:
@@ -144,6 +144,158 @@ README (前3000字):
 技术方案/产品思路/社区运营
 """,
 }
+
+# ============ English Prompts ============
+PROMPTS_EN = {
+    "website": """You are a professional website analyst. Below is technical data and page content for "{title}".
+
+Technical data:
+{tech_info}
+
+Page content (first 3000 chars):
+{content}
+
+Output a Markdown analysis report with these sections (separated by ---):
+
+## One-Line Verdict
+(A definitive judgment in under 15 words)
+
+## Basic Info
+(Table: domain registration date, CDN, backend framework, page size, image count, external link count)
+
+## Content Audit
+(Claimed content quantity vs actual quality. Original or scraped? Update frequency?)
+
+## Business Model
+(Pricing/login/payment features. What's the monetization path? Does it work end-to-end?)
+
+## SEO Assessment
+(Page count, structured data, meta tags, backlinks. Expected organic search traffic?)
+
+## Competitive Score
+(1-10 across 5 dimensions: content depth / tech quality / business loop / SEO / activity. Give total.)
+
+## Takeaways
+Two categories:
+- Ideas worth stealing: ...
+- Mistakes to avoid: ...
+""",
+
+    "article": """You are a viral content analyst. Below is an article/post from "{source}".
+
+Title: {title}
+
+Full text (first 5000 chars):
+{content}
+
+Output a Markdown teardown report:
+
+## One-Line Verdict
+(Why this content will or won't go viral)
+
+## Topic Analysis
+- Topic type: (tutorial / news / opinion / story / listicle / pain-point)
+- Scope: macro topic or niche angle
+- Target audience: who is this for
+- Timing: why now
+
+## Structure Teardown
+Reverse-engineer the article skeleton:
+- Title technique: (number / contrarian / pain-point / curiosity / authority)
+- Opening hook: how the first 3 sentences grab attention
+- Body structure: how many layers, what each layer does
+- Ending: how it wraps up
+- Pacing: sentence variety, paragraph density, information density
+
+## Dual Value Check
+- Practical value: what actionable thing did the reader learn?
+- Emotional value: how does the reader feel after reading?
+- If both are weak → why it flopped
+
+## Virality Factors
+- Social currency: sharing this makes you look how
+- Triggers: is there a point that makes people want to discuss
+- Shareability: worth bookmarking/forwarding
+- Emotional intensity: high arousal > low arousal
+
+## How to Adapt
+If I were to write on this topic:
+- How to differentiate
+- What's my unique advantage
+- 3 alternative title ideas
+""",
+
+    "product": """You are a conversion rate expert. Below is the product/landing page for "{title}".
+
+Page content (first 5000 chars):
+{content}
+
+Output a Markdown teardown report:
+
+## One-Line Verdict
+(How good is this landing page's conversion design)
+
+## Positioning Analysis
+- One-liner: how the product describes itself
+- Target user: who needs this, what problem
+- Differentiation: how it positions vs competitors
+
+## Conversion Element Checklist
+Check each:
+- [ ] Hero section: headline + subheadline + CTA
+- [ ] Social proof: user count / logo wall / testimonials
+- [ ] Feature showcase: screenshots / video / demo
+- [ ] Pricing: free/paid boundary
+- [ ] FAQ: objection handling
+- [ ] Final CTA
+
+## Copy Quality
+- Headline: benefit-driven or feature-driven
+- Subheadline: does it clearly explain what it does
+- CTA button: does it drive action
+
+## Takeaways
+Which elements are worth stealing, which are misses
+""",
+
+    "github": """You are an open source project evaluator. Below is info for the GitHub project "{title}".
+
+Project info:
+{tech_info}
+
+README (first 3000 chars):
+{content}
+
+Output a Markdown evaluation report:
+
+## One-Line Verdict
+(Is this project worth attention)
+
+## Project Overview
+- Stars/Forks/activity
+- What it does: one sentence
+- Tech stack: language + framework
+- License
+
+## Commercial Potential
+- Is it a library / CLI / full product?
+- Can it be productized?
+- What are the alternatives?
+
+## Takeaways
+Tech approach / product insight / community strategy
+""",
+}
+
+# Backwards-compatible default (Chinese)
+PROMPTS = PROMPTS_ZH
+
+
+def get_prompts(lang: str = "zh"):
+    """Return prompt templates for the given language."""
+    if lang == "en":
+        return PROMPTS_EN
+    return PROMPTS_ZH
 
 
 def call_llm(

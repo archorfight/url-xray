@@ -9,10 +9,10 @@ from .fetcher import (
     build_tech_info,
     extract_source_name,
 )
-from .llm import PROMPTS, call_llm
+from .llm import get_prompts, call_llm
 
 
-def teardown(url: str, api_key: str, base_url: str, model: str) -> dict:
+def teardown(url: str, api_key: str, base_url: str, model: str, lang: str = "zh") -> dict:
     """
     Analyze a URL end-to-end.
 
@@ -59,7 +59,8 @@ def teardown(url: str, api_key: str, base_url: str, model: str) -> dict:
     result["tech_info"] = tech_info
 
     # Step 4: Pick prompt template
-    template = PROMPTS.get(url_type, PROMPTS["website"])
+    prompts = get_prompts(lang)
+    template = prompts.get(url_type, prompts["website"])
 
     source = extract_source_name(url)
 

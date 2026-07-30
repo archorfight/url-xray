@@ -21,6 +21,10 @@ dependencies = [
     "python-dotenv>=1.0",
 ]
 
+[project.optional-dependencies]
+spa = ["playwright>=1.40"]
+dev = ["pytest>=8.0"]
+
 [project.scripts]
 case-teardown = "case_teardown.__main__:main"
 

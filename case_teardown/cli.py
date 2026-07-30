@@ -65,6 +65,7 @@ Environment variables (or .env file):
         default=os.environ.get("LLM_MODEL", "gpt-4o"),
         help="LLM model name (or set LLM_MODEL env var)",
     )
+    parser.add_argument("--lang", choices=["zh", "en"], default="zh", help="Report language: zh (default) or en")
     parser.add_argument("--stdout", action="store_true", help="Print report to stdout instead of saving file")
     parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output")
 
@@ -116,6 +117,7 @@ Environment variables (or .env file):
             api_key=args.api_key,
             base_url=args.base_url,
             model=args.model,
+            lang=args.lang,
         )
 
         progress.update(task, description="Generating report...")
