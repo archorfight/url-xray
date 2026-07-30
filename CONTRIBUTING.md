@@ -1,18 +1,18 @@
-# Contributing to case-teardown
+# Contributing to url-xray
 
 Thanks for your interest in contributing! Here's how to help.
 
 ## Bug Reports & Feature Requests
 
-- Open a [GitHub Issue](https://github.com/archorfight/case-teardown/issues)
+- Open a [GitHub Issue](https://github.com/archorfight/url-xray/issues)
 - Include the URL you tried to analyze and the error/output
 - For feature requests, describe the use case
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/archorfight/case-teardown.git
-cd case-teardown
+git clone https://github.com/archorfight/url-xray.git
+cd url-xray
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
@@ -24,7 +24,7 @@ Want to support a new URL type (e.g., YouTube videos, App Store pages)?
 1. Add the type to `detect_type()` in `fetcher.py`
 2. Add a prompt template in `llm.py` (both `PROMPTS_ZH` and `PROMPTS_EN`)
 3. Add any type-specific data fetching logic in `fetcher.py`
-4. Add tests in `tests/test_case_teardown.py`
+4. Add tests in `tests/test_url_xray.py`
 5. Update README
 
 ## Improving Prompts

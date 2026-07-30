@@ -1,5 +1,5 @@
 [project]
-name = "case-teardown"
+name = "url-xray"
 version = "1.0.0"
 description = "Tear down any URL — websites, articles, landing pages, GitHub repos — into structured analysis reports."
 readme = "README.md"
@@ -26,10 +26,10 @@ spa = ["playwright>=1.40"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-case-teardown = "case_teardown.__main__:main"
+url-xray = "url_xray.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/archorfight/case-teardown"
+Homepage = "https://github.com/archorfight/url-xray"
 
 [build-system]
 requires = ["hatchling"]

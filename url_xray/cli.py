@@ -1,4 +1,4 @@
-"""CLI interface for case-teardown."""
+"""CLI interface for url-xray."""
 
 import sys
 import os
@@ -15,13 +15,12 @@ from .fetcher import detect_type
 console = Console()
 
 BANNER = r"""
-   ___                  ___                    _
-  / __\___  _ __ ___   / __\___  ___ _ __ _ __(_) ___ ___
- / /  / _ \| '__/ _ \ / /  / _ \/ __| '__| '__| |/ __/ __|
-/ /__| (_) | | |  __// /__| (_) \__ \ |  | |  | | (__\__ \
-\____/\___/|_|  \___|\____/\___/|___/_|  |_|  |_|\___|___/
+ _   _ ___ _   _ ___
+| | | / __| | | / __|
+| |_| \__ \ |_| \__ \
+ \__,_|___/\__,_|___/
 
-  Tear down any URL into structured analysis.
+  X-ray any URL into structured analysis.
 """
 
 
@@ -31,14 +30,14 @@ def main():
     load_dotenv()  # Load .env if present
 
     parser = argparse.ArgumentParser(
-        prog="case-teardown",
+        prog="url-xray",
         description="Tear down any URL — websites, articles, landing pages, GitHub repos — into structured analysis.",
         epilog="""
 Examples:
-  case-teardown https://example.com
-  case-teardown https://mp.weixin.qq.com/s/xxxxx --output ./reports
-  case-teardown https://github.com/user/repo --model gpt-4o
-  case-teardown https://example.com --base-url https://api.deepseek.com/v1 --model deepseek-chat
+  url-xray https://example.com
+  url-xray https://mp.weixin.qq.com/s/xxxxx --output ./reports
+  url-xray https://github.com/user/repo --model gpt-4o
+  url-xray https://example.com --base-url https://api.deepseek.com/v1 --model deepseek-chat
 
 Environment variables (or .env file):
   LLM_API_KEY    Required. Your API key.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI entry point for case-teardown."""
+"""CLI entry point for url-xray."""
 
 import sys
 import os

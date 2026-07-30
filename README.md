@@ -1,4 +1,4 @@
-# case-teardown 🔍
+# url-xray 🔍
 
 Tear down any URL — websites, articles, landing pages, GitHub repos — into structured analysis reports.
 
@@ -22,35 +22,35 @@ Give it a URL. It auto-detects the type and runs the right analysis:
 
 ```bash
 # Install
-pip install git+https://github.com/archorfight/case-teardown.git
+pip install git+https://github.com/archorfight/url-xray.git
 
 # Set your API key (any OpenAI-compatible API works)
 export LLM_API_KEY=*** it
-case-teardown https://example.com
+url-xray https://example.com
 ```
 
 ## Usage
 
 ```bash
 # Basic — save report to current directory (Chinese output)
-case-teardown https://example.com
+url-xray https://example.com
 
 # English report
-case-teardown https://example.com --lang en
+url-xray https://example.com --lang en
 
 # Specify output directory
-case-teardown https://example.com -o ./reports
+url-xray https://example.com -o ./reports
 
 # Print to stdout instead of saving
-case-teardown https://example.com --stdout
+url-xray https://example.com --stdout
 
 # Use DeepSeek
-case-teardown https://example.com \
+url-xray https://example.com \
   --base-url https://api.deepseek.com/v1 \
   --model deepseek-chat
 
 # Use any OpenAI-compatible provider
-case-teardown https://example.com \
+url-xray https://example.com \
   --base-url https://openrouter.ai/api/v1 \
   --model anthropic/claude-sonnet-4
 ```
@@ -79,7 +79,7 @@ Any OpenAI-compatible API:
 For JavaScript-rendered sites (Next.js, React, etc.), install with the optional SPA dependency:
 
 ```bash
-pip install "case-teardown[spa]"
+pip install "url-xray[spa]"
 playwright install chromium
 ```
 
@@ -88,8 +88,8 @@ Without this, the tool falls back to static HTML parsing (works for most SSR sit
 ### Output language
 
 ```bash
-case-teardown https://example.com --lang zh  # Chinese (default)
-case-teardown https://example.com --lang en  # English
+url-xray https://example.com --lang zh  # Chinese (default)
+url-xray https://example.com --lang en  # English
 ```
 
 ## Examples
@@ -139,7 +139,7 @@ MIT
 
 ```bash
 # 安装
-pip install git+https://github.com/archorfight/case-teardown.git
+pip install git+https://github.com/archorfight/url-xray.git
 
 # 设置 API Key
 export LLM_API_KEY=*** it

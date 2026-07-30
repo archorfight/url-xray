@@ -1,9 +1,9 @@
-"""Tests for case_teardown package."""
+"""Tests for url_xray package."""
 
 import pytest
-from case_teardown.fetcher import detect_type, _is_spa, extract_source_name
-from case_teardown.llm import get_prompts, call_llm
-from case_teardown.analyzer import teardown, save_report
+from url_xray.fetcher import detect_type, _is_spa, extract_source_name
+from url_xray.llm import get_prompts, call_llm
+from url_xray.analyzer import teardown, save_report
 
 
 class TestDetectType:
