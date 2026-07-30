@@ -73,10 +73,15 @@ def teardown(
 
     # WP5: If fetch completely failed with no usable content, mark as failed first
     content_len = page_data.get("body_text_length", len(content))
+    github_api_data = page_data.get("github_api_data") or {}
     if fetch_error and not content.strip():
-        result["fetch_status"] = "failed"
-        result["report"] = _fallback_report(url, url_type, page_data, "", result["fetch_status"])
-        return result
+        # For github type, API data may still be valid even if page scraping failed
+        if url_type == "github" and github_api_data:
+            result["fetch_status"] = "partial"
+        else:
+            result["fetch_status"] = "failed"
+            result["report"] = _fallback_report(url, url_type, page_data, "", result["fetch_status"])
+            return result
 
     # WP6: Type-specific thin content check
     is_thin = _check_thin_content(url_type, content_len, page_data)
@@ -117,7 +122,7 @@ def teardown(
     # Step 5: Format prompt
     prompt = template.format(
         title=title[:200],
-        content=content[:5000],
+        content=f"<UNTRUSTED_PAGE_CONTENT>\n{content[:5000]}\n</UNTRUSTED_PAGE_CONTENT>",
         tech_info=tech_info,
         source=source,
     )
@@ -203,8 +208,8 @@ def _thin_content_report(url: str, url_type: str, page_data: dict, fetch_status:
 url-xray CLI 使用 httpx 做静态抓取，无法执行 JavaScript。可用的替代方案：
 
 1. 安装 playwright 渲染支持：`pip install url-xray[spa] && playwright install chromium`
-2. 使用 Hermes skill（browser_navigate + browser_console）手动分析
-3. 使用无头浏览器工具（如 opencli、puppeteer）抓取渲染后内容
+2. 使用 Hermes skill 手动分析
+3. 使用无头浏览器工具抓取渲染后内容
 
 ## 已采集的有限数据
 

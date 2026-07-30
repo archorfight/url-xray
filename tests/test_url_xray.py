@@ -31,11 +31,11 @@ class TestDetectType:
     def test_xiaohongshu(self):
         assert detect_type("https://www.xiaohongshu.com/explore/abc") == "article"
 
-    def test_adds_https(self):
-        """detect_type should not crash on URLs without scheme."""
-        # detect_type itself doesn't add scheme, but shouldn't crash
-        result = detect_type("example.com")
-        assert result in ("website",)
+    def test_url_normalization(self):
+        """validate_url should accept valid URLs and return them unchanged."""
+        from url_xray.fetcher import validate_url
+        assert validate_url("https://example.com") == "https://example.com"
+        assert validate_url("http://example.com/path") == "http://example.com/path"
 
 
 class TestSpaDetection:
@@ -407,3 +407,215 @@ class TestPromptInjection:
         assert "0-5" in prompts["website"]
         prompts_en = get_prompts("en")
         assert "0-5" in prompts_en["website"]
+
+
+class TestRedirectSecurity:
+    """ISSUE 1: Manual redirect handling with validate_url on each hop."""
+
+    def test_redirect_to_private_rejected(self):
+        """Redirect from public URL to 192.168.x should raise ValueError."""
+        from unittest.mock import patch, MagicMock
+        import httpx
+
+        # Build a redirect response: 302 → http://192.168.1.1/
+        redirect_resp = MagicMock(spec=httpx.Response)
+        redirect_resp.is_redirect = True
+        redirect_resp.headers = {"location": "http://192.168.1.1/"}
+
+        with patch("url_xray.fetcher.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = redirect_resp
+            mock_client_cls.return_value = mock_client
+
+            from url_xray.fetcher import _fetch_safe
+            with pytest.raises(ValueError):
+                _fetch_safe("https://example.com/page")
+
+    def test_max_redirects_enforced(self):
+        """More than max_redirects hops should raise ValueError."""
+        from unittest.mock import patch, MagicMock
+        import httpx
+
+        redirect_resp = MagicMock(spec=httpx.Response)
+        redirect_resp.is_redirect = True
+        redirect_resp.headers = {"location": "https://example.com/hop"}
+
+        with patch("url_xray.fetcher.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = redirect_resp
+            mock_client_cls.return_value = mock_client
+
+            from url_xray.fetcher import _fetch_safe
+            with pytest.raises(ValueError, match="(?i)too many redirects"):
+                _fetch_safe("https://example.com/start", max_redirects=3)
+
+
+class TestPromptInjectionIsolation:
+    """ISSUE 2: Untrusted content delimiter wrapping."""
+
+    def test_untrusted_delimiter_in_prompt(self):
+        """call_llm should receive prompt with <UNTRUSTED_PAGE_CONTENT> wrapper."""
+        from unittest.mock import patch
+        captured_prompt = {}
+
+        def fake_llm(prompt, **kwargs):
+            captured_prompt["value"] = prompt
+            return "## 一句话结论\nok"
+
+        with patch("url_xray.analyzer.call_llm", side_effect=fake_llm), \
+             patch("url_xray.analyzer.fetch_page") as mock_fetch, \
+             patch("url_xray.analyzer.build_tech_info") as mock_tech:
+            mock_fetch.return_value = {
+                "url": "https://normal-site.com",
+                "error": None,
+                "title": "Normal Site",
+                "body_text": "This is a real website with lots of content. " * 50,
+                "body_text_length": 1700,
+                "html_size_kb": 120,
+                "status_code": 200,
+                "img_count": 10,
+                "link_count": 20,
+                "external_links": 5,
+                "h1_tags": ["Welcome"],
+                "frameworks_detected": [],
+                "has_jsonld": False,
+            }
+            mock_tech.return_value = "域名: normal-site.com"
+            teardown("https://normal-site.com", api_key="fake-key", base_url="http://x", model="m")
+
+        assert "<UNTRUSTED_PAGE_CONTENT>" in captured_prompt["value"]
+        assert "</UNTRUSTED_PAGE_CONTENT>" in captured_prompt["value"]
+
+
+class TestScoringDrift:
+    """ISSUE 3: Ensure no weighted average language in prompts."""
+
+    def test_scoring_no_weighted_average(self):
+        from url_xray.llm import PROMPTS_ZH, PROMPTS_EN
+        assert "加权平均" not in PROMPTS_ZH["website"]
+        assert "weighted average" not in PROMPTS_EN["website"]
+        # Simple average should be present
+        assert "简单平均" in PROMPTS_ZH["website"]
+        assert "simple average" in PROMPTS_EN["website"].lower()
+
+
+class TestGithubApiPartial:
+    """ISSUE 4b: GitHub API data should allow partial report even when page fails."""
+
+    def test_github_api_partial_when_page_fails(self):
+        from unittest.mock import patch
+        with patch("url_xray.analyzer.call_llm") as mock_llm, \
+             patch("url_xray.analyzer.fetch_github_info") as mock_fetch, \
+             patch("url_xray.analyzer.build_tech_info") as mock_tech:
+            mock_fetch.return_value = {
+                "url": "https://github.com/u/r",
+                "error": "connection refused",
+                "title": "Test Repo",
+                "body_text": "",
+                "body_text_length": 0,
+                "github_api_data": {
+                    "stars": 42,
+                    "forks": 3,
+                    "open_issues": 1,
+                    "license": "MIT",
+                    "language": "Python",
+                    "release_tag": "v1.0.0",
+                    "release_date": "2025-01-01T00:00:00Z",
+                },
+                "github_api_error": None,
+            }
+            mock_tech.return_value = "URL: https://github.com/u/r\nStars: 42"
+            mock_llm.return_value = "## 一句话结论\nrepo with data"
+            result = teardown("https://github.com/u/r", "k", "http://x", "m")
+            assert result["fetch_status"] != "failed"
+            assert "repo with data" in result["report"]
+
+
+class TestSitemapStatus:
+    """ISSUE 5: Sitemap should distinguish not_found from zero/error."""
+
+    def test_sitemap_distinguishes_not_found(self):
+        from unittest.mock import patch
+        from url_xray.fetcher import build_tech_info
+        with patch("url_xray.fetcher.check_sitemap", return_value=(0, "not_found")), \
+             patch("url_xray.fetcher.fetch_headers", return_value={}), \
+             patch("url_xray.fetcher.check_routes", return_value={}), \
+             patch("url_xray.fetcher.get_domain_age", return_value="unknown"):
+            tech = build_tech_info({"url": "https://example.com"}, "website")
+        assert "not found" in tech.lower()
+
+    def test_sitemap_ok_shows_count(self):
+        from unittest.mock import patch
+        from url_xray.fetcher import build_tech_info
+        with patch("url_xray.fetcher.check_sitemap", return_value=(132, "ok")), \
+             patch("url_xray.fetcher.fetch_headers", return_value={}), \
+             patch("url_xray.fetcher.check_routes", return_value={}), \
+             patch("url_xray.fetcher.get_domain_age", return_value="unknown"):
+            tech = build_tech_info({"url": "https://example.com"}, "website")
+        assert "132" in tech
+
+    def test_sitemap_error_shown(self):
+        from unittest.mock import patch
+        from url_xray.fetcher import build_tech_info
+        with patch("url_xray.fetcher.check_sitemap", return_value=(0, "error")), \
+             patch("url_xray.fetcher.fetch_headers", return_value={}), \
+             patch("url_xray.fetcher.check_routes", return_value={}), \
+             patch("url_xray.fetcher.get_domain_age", return_value="unknown"):
+            tech = build_tech_info({"url": "https://example.com"}, "website")
+        assert "fetch error" in tech.lower()
+
+
+class TestGithubReleaseData:
+    """ISSUE 4a: fetch_github_info should include release_tag/release_date."""
+
+    def test_github_release_data(self):
+        from unittest.mock import patch
+        with patch("url_xray.fetcher.fetch_page", return_value={
+            "url": "https://github.com/u/r", "error": None, "title": "Repo",
+            "body_text": "readme content", "body_text_length": 100,
+        }), patch("url_xray.fetcher.httpx.Client") as mock_client_cls:
+            # Build mock responses for repo API and releases API
+            import httpx
+            from unittest.mock import MagicMock
+
+            repo_resp = MagicMock(spec=httpx.Response)
+            repo_resp.status_code = 200
+            repo_resp.headers = {}
+            repo_resp.raise_for_status = MagicMock()
+            repo_resp.json.return_value = {
+                "stargazers_count": 100,
+                "forks_count": 20,
+                "open_issues_count": 5,
+                "license": {"spdx_id": "MIT"},
+                "created_at": "2020-01-01T00:00:00Z",
+                "updated_at": "2025-06-01T00:00:00Z",
+                "pushed_at": "2025-06-15T00:00:00Z",
+                "language": "Python",
+                "default_branch": "main",
+                "description": "A test repo",
+            }
+
+            release_resp = MagicMock(spec=httpx.Response)
+            release_resp.status_code = 200
+            release_resp.json.return_value = {
+                "tag_name": "v2.0.0",
+                "published_at": "2025-05-01T00:00:00Z",
+            }
+
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            # First call → repo data, second call → release data
+            mock_client.get.side_effect = [repo_resp, release_resp]
+            mock_client_cls.return_value = mock_client
+
+            from url_xray.fetcher import fetch_github_info
+            result = fetch_github_info("https://github.com/u/r")
+
+        api_data = result.get("github_api_data", {})
+        assert api_data.get("release_tag") == "v2.0.0"
+        assert api_data.get("release_date") == "2025-05-01T00:00:00Z"

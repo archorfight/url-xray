@@ -136,18 +136,54 @@ def get_domain_age(domain: str) -> str:
     return "unknown"
 
 
+def _fetch_safe(url, max_redirects=5, timeout=20, extra_headers=None, transport=None, method="get"):
+    """Fetch URL with manual redirect handling, validating each redirect target.
+
+    - follow_redirects=False; redirects are followed manually (max max_redirects).
+    - Each redirect Location is passed through validate_url() before following.
+    - Raises ValueError if a redirect target is unsafe or too many redirects.
+    """
+    headers = {"User-Agent": _UA()}
+    if extra_headers:
+        headers.update(extra_headers)
+
+    current_url = url
+    redirects_followed = 0
+    while True:
+        client_kwargs = {"timeout": timeout, "follow_redirects": False}
+        if transport is not None:
+            client_kwargs["transport"] = transport
+        with httpx.Client(**client_kwargs) as client:
+            if method == "head":
+                resp = client.head(current_url, headers=headers)
+            else:
+                resp = client.get(current_url, headers=headers)
+        if resp.is_redirect:
+            if redirects_followed >= max_redirects:
+                raise ValueError(
+                    f"Too many redirects (max {max_redirects}) following {url}"
+                )
+            redirects_followed += 1
+            location = resp.headers.get("location", "")
+            if not location:
+                return resp
+            redirect_url = str(httpx.URL(current_url).join(location))
+            validate_url(redirect_url)  # raises ValueError if unsafe
+            current_url = redirect_url
+        else:
+            return resp
+
+
 def fetch_headers(url: str) -> dict:
     """Fetch HTTP headers."""
     headers = {}
     try:
-        with httpx.Client(timeout=15, follow_redirects=True) as client:
-            resp = client.head(url, headers={"User-Agent": _UA()})
-            headers = dict(resp.headers)
+        resp = _fetch_safe(url, max_redirects=5, timeout=15, method="head")
+        headers = dict(resp.headers)
     except Exception:
         try:
-            with httpx.Client(timeout=15, follow_redirects=True) as client:
-                resp = client.get(url, headers={"User-Agent": _UA()})
-                headers = dict(resp.headers)
+            resp = _fetch_safe(url, max_redirects=5, timeout=15, method="get")
+            headers = dict(resp.headers)
         except Exception:
             pass
     return headers
@@ -168,18 +204,24 @@ def check_routes(url: str) -> dict:
     return routes
 
 
-def check_sitemap(url: str) -> int:
-    """Check sitemap and count URLs."""
+def check_sitemap(url: str):
+    """Check sitemap and count URLs.
+
+    Returns:
+        (count, status) where status is "ok", "not_found", or "error".
+    """
     parsed = urlparse(url)
     sitemap_url = f"{parsed.scheme}://{parsed.netloc}/sitemap.xml"
     try:
-        with httpx.Client(timeout=10, follow_redirects=True) as client:
-            resp = client.get(sitemap_url, headers={"User-Agent": _UA()})
-            if resp.status_code == 200:
-                return resp.text.count("<loc>")
+        resp = _fetch_safe(sitemap_url, max_redirects=5, timeout=10)
+        if resp.status_code == 200:
+            return (resp.text.count("<loc>"), "ok")
+        elif resp.status_code == 404:
+            return (0, "not_found")
+        else:
+            return (0, "not_found")
     except Exception:
-        pass
-    return 0
+        return (0, "error")
 
 
 def _UA() -> str:
@@ -243,11 +285,15 @@ def fetch_page(url: str) -> dict:
         return data
 
     try:
-        with httpx.Client(timeout=20, follow_redirects=True) as client:
-            resp = client.get(url, headers={"User-Agent": _UA(), "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"})
-            html = resp.text
-            data["status_code"] = resp.status_code
-            data["final_url"] = str(resp.url)
+        resp = _fetch_safe(
+            url,
+            max_redirects=5,
+            timeout=20,
+            extra_headers={"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"},
+        )
+        html = resp.text
+        data["status_code"] = resp.status_code
+        data["final_url"] = str(resp.url)
     except Exception as e:
         data["error"] = str(e)
         return data
@@ -394,6 +440,22 @@ def fetch_github_info(url: str) -> dict:
                     "default_branch": raw.get("default_branch"),
                     "description": raw.get("description"),
                 }
+
+            # Fetch latest release info
+            try:
+                releases_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+                with httpx.Client(timeout=15, follow_redirects=True) as rc:
+                    rresp = rc.get(releases_url, headers=gh_headers)
+                    if rresp.status_code == 200:
+                        rel = rresp.json()
+                        api_data["release_tag"] = rel.get("tag_name")
+                        api_data["release_date"] = rel.get("published_at")
+                    else:
+                        api_data["release_tag"] = None
+                        api_data["release_date"] = None
+            except Exception:
+                api_data["release_tag"] = None
+                api_data["release_date"] = None
     except httpx.HTTPStatusError as e:
         api_error = f"GitHub API error: {e.response.status_code}"
     except Exception as e:
@@ -429,6 +491,12 @@ def build_tech_info(page_data: dict, url_type: str) -> str:
             lines.append(f"Created: {api_data.get('created_at', '?')}")
             lines.append(f"Last Update: {api_data.get('updated_at', '?')}")
             lines.append(f"Last Push: {api_data.get('pushed_at', '?')}")
+            release_tag = api_data.get('release_tag')
+            release_date = api_data.get('release_date')
+            if release_tag:
+                lines.append(f"Latest Release: {release_tag} ({release_date or 'date unknown'})")
+            else:
+                lines.append("Latest Release: none")
             if api_data.get("description"):
                 lines.append(f"Description: {api_data['description']}")
         else:
@@ -442,7 +510,7 @@ def build_tech_info(page_data: dict, url_type: str) -> str:
         domain_age = get_domain_age(domain)
         headers = fetch_headers(url)
         routes = check_routes(url)
-        sitemap_count = check_sitemap(url)
+        sitemap_count, sitemap_status = check_sitemap(url)
 
         lines.append(f"域名: {domain}")
         lines.append(f"域名注册: {domain_age}")
@@ -452,7 +520,12 @@ def build_tech_info(page_data: dict, url_type: str) -> str:
         lines.append(f"H1: {page_data.get('h1_tags', [])}")
         lines.append(f"框架: {', '.join(page_data.get('frameworks_detected', ['未检测到'])) or '未检测到'}")
         lines.append(f"JSON-LD: {'有' if page_data.get('has_jsonld') else '无'}")
-        lines.append(f"Sitemap页面数: {sitemap_count}")
+        if sitemap_status == "ok":
+            lines.append(f"Sitemap: {sitemap_count} pages")
+        elif sitemap_status == "not_found":
+            lines.append("Sitemap: not found")
+        else:
+            lines.append("Sitemap: fetch error")
         lines.append(f"Server: {headers.get('server', '?')}")
         lines.append(f"路由探测: {json.dumps(routes, ensure_ascii=False)}")
         if page_data.get("meta_description"):

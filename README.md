@@ -23,7 +23,7 @@ Give it a URL. It auto-detects the type and runs the right analysis:
 This repo contains two complementary things:
 
 - **`skill/url-xray/`** — An agent skill (operation manual for AI agents like Hermes). Uses headless browser, terminal, and other agent tools for deep analysis. Handles SPAs, login walls, visual assessment.
-- **`url_xray/`** (Python CLI) — A standalone pip package. Automated httpx-based fetching + LLM analysis. Simpler, but can't render JavaScript or do visual assessment. When it can't fetch content (SPA), it says so honestly instead of fabricating analysis.
+- **`url_xray/`** (Python CLI) — A standalone pip package. Automated httpx-based fetching + LLM analysis. Simpler, but cannot render JavaScript by default; install SPA dependency to enable. When it can't fetch content (SPA), it says so honestly instead of fabricating analysis.
 
 The skill is the source of truth for analysis framework. The CLI follows it.
 

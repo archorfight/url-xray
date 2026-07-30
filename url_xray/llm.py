@@ -38,7 +38,7 @@ PROMPTS_ZH = {
 - SEO基础
 - 更新活跃度
 
-每个分数后面跟一句话理由 + 一条证据。缺关键证据标N/A，不默认给中间分。总分=加权平均，保留一位小数。
+每个分数后面跟一句话理由 + 一条证据。缺关键证据标N/A，不默认给中间分。总分=简单平均，保留一位小数。
 
 ## 可借鉴点
 分两类:
@@ -203,7 +203,7 @@ Score each dimension 0-5. Anchors: 0=none, 1=terrible, 3=adequate, 5=excellent.
 - SEO foundation
 - Update activity
 
-Each score must have a one-line reason + one piece of evidence. Mark N/A for missing evidence — do NOT default to a middle score. Total = weighted average, one decimal.
+Each score must have a one-line reason + one piece of evidence. Mark N/A for missing evidence — do NOT default to a middle score. Total = simple average, one decimal.
 
 ## Takeaways
 Two categories:
