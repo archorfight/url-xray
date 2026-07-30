@@ -157,7 +157,7 @@ MIT
 ### Skill 与 CLI 的区别
 
 - **skill/url-xray/**：AI Agent 的操作手册（如 Hermes）。使用浏览器、终端等工具做深度分析，能处理 SPA、登录墙、视觉评估。
-- **url_xray/**（Python CLI）：独立 pip 包。基于 httpx 自动抓取 + LLM 分析。更简单，但无法渲染 JavaScript 或做视觉评估。抓不到内容时会如实说明，不编造分析。
+- **url_xray/**（Python CLI）：独立 pip 包。基于 httpx 自动抓取 + LLM 分析。默认无法渲染 JavaScript 或做视觉评估（安装 SPA 依赖后可渲染）。抓不到内容时会如实说明，不编造分析。
 
 Skill 是分析框架的唯一真源，CLI 跟随它。
 
