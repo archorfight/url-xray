@@ -112,6 +112,15 @@ class TestSaveReport:
             assert "Test Report" in content
             assert "https://example.com" in content
 
+    def test_save_html_format(self, tmp_path):
+        result = {"url": "https://example.com", "type": "website", "report": "# Test\n\ncontent"}
+        path = save_report(result, str(tmp_path), fmt="html")
+        assert path.endswith(".html")
+        with open(path) as f:
+            content = f.read()
+            assert "<html" in content
+            assert "Test" in content
+
     def test_save_different_types(self, tmp_path):
         for url_type in ["website", "article", "product", "github"]:
             result = {

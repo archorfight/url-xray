@@ -103,7 +103,7 @@ def _fallback_report(url: str, url_type: str, page_data: dict, tech_info: str) -
 """
 
 
-def save_report(result: dict, output_dir: str = ".") -> str:
+def save_report(result: dict, output_dir: str = ".", fmt: str = "md") -> str:
     """Save report to file. Returns file path."""
     import os
 
@@ -122,14 +122,20 @@ def save_report(result: dict, output_dir: str = ".") -> str:
 
     # Clean host for filename
     clean_host = host.replace("/", "_").replace(":", "_")[:40]
-    filename = f"{clean_host}-{type_suffix}-{date}.md"
-    filepath = os.path.join(output_dir, filename)
 
-    # Add header
-    header = f"> URL: {result['url']} | Type: {result['type']} | Date: {date}\n\n"
-    full_report = header + result["report"]
-
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(full_report)
+    if fmt == "html":
+        from .html_render import render_html
+        ext = "html"
+        filepath = os.path.join(output_dir, f"{clean_host}-{type_suffix}-{date}.{ext}")
+        html_content = render_html(result)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(html_content)
+    else:
+        ext = "md"
+        filepath = os.path.join(output_dir, f"{clean_host}-{type_suffix}-{date}.{ext}")
+        header = f"> URL: {result['url']} | Type: {result['type']} | Date: {date}\n\n"
+        full_report = header + result["report"]
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(full_report)
 
     return filepath

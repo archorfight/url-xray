@@ -65,6 +65,7 @@ Environment variables (or .env file):
         help="LLM model name (or set LLM_MODEL env var)",
     )
     parser.add_argument("--lang", choices=["zh", "en"], default="zh", help="Report language: zh (default) or en")
+    parser.add_argument("--format", choices=["md", "html"], default="html", help="Output format: html (default, styled) or md (plain markdown)")
     parser.add_argument("--stdout", action="store_true", help="Print report to stdout instead of saving file")
     parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output")
 
@@ -134,7 +135,7 @@ Environment variables (or .env file):
         console.print()
         console.print(result["report"], style="white")
     else:
-        filepath = save_report(result, args.output)
+        filepath = save_report(result, args.output, fmt=args.format)
         if not args.quiet:
             console.print(f"\n[green]✅ Report saved:[/green] {filepath}")
             console.print(f"\n[dim]Report preview (first 30 lines):[/dim]\n")
