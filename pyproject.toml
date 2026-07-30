@@ -1,0 +1,32 @@
+[project]
+name = "case-teardown"
+version = "1.0.0"
+description = "Tear down any URL — websites, articles, landing pages, GitHub repos — into structured analysis reports."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Archer" }]
+keywords = ["teardown", "analysis", "competitive-analysis", "content-analysis", "seo"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
+    "rich>=13.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+case-teardown = "case_teardown.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/archorfight/case-teardown"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
