@@ -33,9 +33,9 @@ def _md_to_html(md: str) -> str:
         text = re.sub(r"`([^`]+)`", r'<code class="inline-code">\1</code>', text)
         # Links [text](url)
         text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2" target="_blank">\1</a>', text)
-        # Checkbox
-        text = text.replace("- [ ]", '<span class="checkbox">☐</span>')
-        text = text.replace("- [x]", '<span class="checkbox checked">☑</span>')
+        # Checkbox (after esc — use HTML entity since unicode gets mangled)
+        text = text.replace("\u2610", '<span class="checkbox">\u2610</span>')
+        text = text.replace("\u2611", '<span class="checkbox checked">\u2611</span>')
         return text
 
     i = 0
@@ -131,7 +131,11 @@ def _md_to_html(md: str) -> str:
                 out.append("<ul>")
                 in_list = True
             in_olist = False
-            out.append(f"<li>{inline(m.group(1))}</li>")
+            content_text = m.group(1)
+            # Handle checkbox syntax before inline processing
+            content_text = re.sub(r"^\[ \]\s*", "\u2610 ", content_text)
+            content_text = re.sub(r"^\[x\]\s*", "\u2611 ", content_text, flags=re.IGNORECASE)
+            out.append(f"<li>{inline(content_text)}</li>")
             i += 1
             continue
         elif in_list:
