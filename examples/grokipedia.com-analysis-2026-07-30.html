@@ -3,464 +3,297 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>URL X-Ray — Grokipedia — AI生成的在线百科全书</title>
+<title>Grokipedia — AI生成的在线百科全书</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  /* ── Linear-inspired design tokens ───────────────────────────── */
   :root {
-    --bg-marketing:   #08090a;
-    --bg-panel:       #0f1011;
-    --bg-elevated:    #191a1b;
-    --bg-hover:       #28282c;
-
-    --text-primary:   #f7f8f8;
-    --text-secondary:  #d0d6e0;
-    --text-muted:     #8a8f98;
-    --text-faint:     #62666d;
-
-    --border-subtle:  rgba(255,255,255,0.05);
-    --border-standard: rgba(255,255,255,0.08);
-    --border-strong:  rgba(255,255,255,0.12);
-
-    --accent-brand:   #5e6ad2;
-    --accent-hover:   #5e6ad2cc;
-    --green:          #27a644;
-    --red:            #ef4444;
-
-    --radius-sm:      4px;
-    --radius-md:      6px;
-    --radius-lg:      8px;
-    --radius-xl:      12px;
-    --radius-2xl:     16px;
-
-    --shadow-elevated: 0 0 0 1px var(--border-standard), rgba(0,0,0,0.4) 0 2px 4px;
+    --bg:          #08090a;
+    --text:        #f7f8f8;
+    --text-2:      #d0d6e0;
+    --text-3:      #8a8f98;
+    --text-4:      #62666d;
+    --border:      rgba(255,255,255,0.06);
+    --border-2:    rgba(255,255,255,0.10);
+    --accent:      #5e6ad2;
+    --green:       #27a644;
+    --surface:     rgba(255,255,255,0.02);
+    --mono:        'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans:        'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
   }
 
-  /* ── Reset ───────────────────────────────────────────────────── */
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  *::selection { background: var(--accent-brand); color: white; }
-
-  html { scroll-behavior: smooth; }
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  ::selection { background: var(--accent); color: #fff; }
 
   body {
-    background: var(--bg-marketing);
-    color: var(--text-secondary);
-    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--text-2);
+    font-family: var(--sans);
     font-size: 15px;
     font-weight: 400;
     font-feature-settings: 'cv01', 'ss03';
-    line-height: 1.6;
+    line-height: 1.7;
     letter-spacing: -0.011em;
-    padding: 0;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* ── Layout ──────────────────────────────────────────────────── */
-  .container {
-    max-width: 860px;
+  /* ── Container ──────────────────────────────────────────────── */
+  .wrap {
+    max-width: 720px;
     margin: 0 auto;
-    padding: 32px 24px 64px;
+    padding: 48px 32px 80px;
   }
 
-  /* ── Top bar ─────────────────────────────────────────────────── */
-  .topbar {
+  /* ── Header ─────────────────────────────────────────────────── */
+  .header {
+    margin-bottom: 48px;
+  }
+  .header-meta {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 40px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border-subtle);
+    gap: 12px;
+    margin-bottom: 20px;
   }
-  .topbar-brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    text-decoration: none;
-    letter-spacing: -0.01em;
-  }
-  .topbar-brand:hover { color: var(--text-primary); }
-  .topbar-brand .logo {
-    width: 20px; height: 20px;
-    border-radius: var(--radius-sm);
-    background: var(--accent-brand);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700;
-    color: white;
-  }
-  .topbar-meta {
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--text-faint);
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    letter-spacing: 0;
-  }
-
-  /* ── Report header ───────────────────────────────────────────── */
-  .report-header {
-    position: relative;
-    padding: 32px 0 28px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-  .report-header::before {
-    content: '';
-    position: absolute;
-    left: -24px; right: -24px; top: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, #5e6ad240, transparent);
-  }
-  .header-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-  .type-badge {
+  .badge {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 3px 10px;
-    border-radius: 9999px;
+    border-radius: 999px;
     background: #5e6ad218;
     color: #5e6ad2;
     font-size: 12px;
     font-weight: 500;
-    border: 1px solid #5e6ad230;
     letter-spacing: -0.01em;
+  }
+  .date {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-4);
   }
   .copy-btn {
     margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(255,255,255,0.04);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-standard);
-    padding: 6px 14px;
-    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-3);
+    border: none;
+    padding: 4px 8px;
     cursor: pointer;
-    font-family: inherit;
-    font-size: 13px;
+    font-family: var(--sans);
+    font-size: 12px;
     font-weight: 500;
-    letter-spacing: -0.01em;
-    transition: all 0.15s ease;
+    transition: color 0.15s;
   }
-  .copy-btn:hover {
-    background: rgba(255,255,255,0.08);
-    border-color: var(--border-strong);
-    color: var(--text-primary);
-  }
-  .copy-btn.copied {
-    background: var(--green);
-    border-color: var(--green);
-    color: white;
-  }
-  .header-title {
-    font-size: 26px;
+  .copy-btn:hover { color: var(--text); }
+  .copy-btn.copied { color: var(--green); }
+
+  .title {
+    font-size: 28px;
     font-weight: 600;
-    line-height: 1.25;
-    letter-spacing: -0.028em;
-    color: var(--text-primary);
-    margin-bottom: 8px;
+    line-height: 1.3;
+    letter-spacing: -0.03em;
+    color: var(--text);
+    margin-bottom: 6px;
   }
-  .header-url {
+  .url {
+    font-family: var(--mono);
     font-size: 13px;
-    font-weight: 400;
-    color: var(--text-muted);
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    letter-spacing: 0;
-    word-break: break-all;
+    color: var(--text-3);
   }
-  .header-url a {
-    color: var(--text-muted);
+  .url a {
+    color: var(--text-3);
     text-decoration: none;
-    transition: color 0.15s ease;
   }
-  .header-url a:hover { color: var(--accent-brand); }
+  .url a:hover { color: var(--accent); }
 
-  /* ── Card (## section) ───────────────────────────────────────── */
-  .card {
-    background: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-xl);
-    padding: 24px 28px;
-    margin-top: 16px;
-    transition: border-color 0.15s ease;
+  /* ── Document body (THE core change: no card wrappers) ──────── */
+  .doc {
+    /* Flat flow — sections separated by margin, not containers */
   }
-  .card:hover {
-    border-color: var(--border-standard);
-  }
-  .card:first-of-type { margin-top: 24px; }
 
-  .card-title {
-    font-size: 15px;
+  /* Headings — typography creates the hierarchy */
+  h1 {
+    font-size: 20px;
     font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-subtle);
-    letter-spacing: -0.016em;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    color: var(--text);
+    margin: 0 0 12px;
+    letter-spacing: -0.022em;
   }
-  .card-title::before {
+  h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 40px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.018em;
+    position: relative;
+  }
+  h2::before {
     content: '';
-    width: 3px; height: 14px;
-    background: var(--accent-brand);
+    position: absolute;
+    left: -14px;
+    top: 4px;
+    width: 3px;
+    height: 14px;
+    background: var(--accent);
     border-radius: 2px;
-    opacity: 0.8;
   }
-
-  .sub-title {
+  h3 {
     font-size: 14px;
     font-weight: 500;
-    color: var(--text-muted);
-    margin: 20px 0 8px;
+    color: var(--text-3);
+    margin: 24px 0 8px;
     letter-spacing: -0.01em;
   }
-  .sub-title:first-child { margin-top: 0; }
+  h4 {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-3);
+    margin: 20px 0 6px;
+  }
 
-  /* ── Text ────────────────────────────────────────────────────── */
+  /* Paragraphs */
   p {
-    margin: 8px 0;
-    color: var(--text-secondary);
+    margin: 10px 0;
     font-size: 14px;
-    line-height: 1.65;
+    line-height: 1.7;
+    color: var(--text-2);
   }
-  strong {
-    color: var(--text-primary);
-    font-weight: 600;
-  }
-  em {
-    color: var(--text-muted);
-    font-style: italic;
-  }
+  strong { color: var(--text); font-weight: 600; }
+  em { color: var(--text-3); }
   a {
-    color: var(--accent-brand);
+    color: var(--accent);
     text-decoration: none;
-    transition: color 0.15s ease;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s;
   }
-  a:hover {
-    color: var(--accent-hover);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
+  a:hover { border-bottom-color: var(--accent); }
 
-  /* ── Lists ───────────────────────────────────────────────────── */
+  /* Lists — flat, generous spacing */
   ul, ol {
-    margin: 8px 0;
     padding-left: 20px;
+    margin: 10px 0;
   }
   li {
-    margin: 5px 0;
     font-size: 14px;
-    line-height: 1.65;
-    color: var(--text-secondary);
+    line-height: 1.7;
+    margin: 6px 0;
+    color: var(--text-2);
   }
-  li::marker {
-    color: var(--text-faint);
-  }
-  .checkbox {
-    margin-right: 6px;
-    color: var(--text-faint);
-    font-size: 14px;
-  }
-  .checkbox.checked {
-    color: var(--green);
-  }
+  li::marker { color: var(--text-4); }
+  .cb { margin-right: 6px; color: var(--text-4); }
+  .cb.done { color: var(--green); }
 
-  /* ── Tables ──────────────────────────────────────────────────── */
-  .table-wrap {
-    overflow-x: auto;
-    margin: 12px -8px;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border-subtle);
-  }
+  /* Table — no box, no outer border. Just row separators. */
   table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
+    margin: 16px 0;
   }
   th {
-    background: var(--bg-elevated);
-    padding: 10px 14px;
     text-align: left;
+    padding: 8px 0;
     font-weight: 500;
     font-size: 12px;
-    color: var(--text-muted);
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-3);
+    border-bottom: 1px solid var(--border-2);
   }
   td {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border-subtle);
-    color: var(--text-secondary);
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-2);
   }
-  tr:last-child td {
+  tr:last-child td, tr:last-child th {
     border-bottom: none;
   }
-  tbody tr {
-    transition: background 0.1s ease;
-  }
-  tbody tr:hover {
-    background: rgba(255,255,255,0.02);
+  th:not(:last-child), td:not(:last-child) {
+    padding-right: 24px;
   }
 
-  /* ── Code ────────────────────────────────────────────────────── */
-  .code-block {
-    background: var(--bg-marketing);
-    border: 1px solid var(--border-standard);
-    border-radius: var(--radius-lg);
-    padding: 16px 18px;
+  /* Code — subtle bg, no heavy border */
+  pre {
+    background: rgba(0,0,0,0.3);
+    border-radius: 8px;
+    padding: 14px 16px;
     overflow-x: auto;
     margin: 12px 0;
+    font-family: var(--mono);
     font-size: 13px;
     line-height: 1.55;
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--text-secondary);
+    color: var(--text-2);
   }
-  .inline-code {
+  code { /* inline */ }
+  p code, li code, td code {
+    font-family: var(--mono);
+    font-size: 0.88em;
     background: rgba(255,255,255,0.06);
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    color: var(--text-primary);
-    letter-spacing: 0;
+    padding: 2px 5px;
+    border-radius: 3px;
+    color: var(--text);
   }
 
-  /* ── Blockquote ──────────────────────────────────────────────── */
+  /* Blockquote — just a left line, no bg */
   blockquote {
-    border-left: 2px solid var(--accent-brand);
-    padding: 10px 16px;
-    margin: 12px 0;
-    background: rgba(255,255,255,0.02);
-    border-radius: 0 var(--radius-md) var(--radius-md) 0;
-    color: var(--text-muted);
+    border-left: 2px solid var(--accent);
+    padding-left: 16px;
+    margin: 16px 0;
+    color: var(--text-3);
     font-size: 14px;
   }
 
-  /* ── Separator ───────────────────────────────────────────────── */
-  .section-sep {
+  /* HR */
+  hr {
     border: none;
-    border-top: 1px solid var(--border-subtle);
-    margin: 24px 0;
+    border-top: 1px solid var(--border);
+    margin: 32px 0;
   }
 
-  /* ── Report title (#) ────────────────────────────────────────── */
-  .report-title {
-    font-size: 20px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    color: var(--text-primary);
-    letter-spacing: -0.022em;
-  }
-
-  /* ── Close card ──────────────────────────────────────────────── */
-  /* When a new card starts, close the previous one automatically.
-     But since we use div.card as wrapper, we rely on the fact that
-     each ## opens a new card div. We need to close them. We do this
-     by injecting </div> before each new card (except the first). */
-
-  /* ── Footer ──────────────────────────────────────────────────── */
+  /* Footer */
   .footer {
-    margin-top: 48px;
+    margin-top: 64px;
     padding-top: 20px;
-    border-top: 1px solid var(--border-subtle);
-    text-align: center;
+    border-top: 1px solid var(--border);
     font-size: 12px;
-    color: var(--text-faint);
+    color: var(--text-4);
+    text-align: center;
   }
-  .footer a {
-    color: var(--text-muted);
-  }
-  .footer a:hover {
-    color: var(--accent-brand);
-  }
+  .footer a { color: var(--text-3); }
 
-  /* ── Responsive ──────────────────────────────────────────────── */
+  /* Responsive */
   @media (max-width: 640px) {
-    .container { padding: 20px 16px 48px; }
-    .header-title { font-size: 20px; }
-    .card { padding: 18px 20px; border-radius: var(--radius-lg); }
-    .report-header::before { left: -16px; right: -16px; }
-  }
-
-  /* ── Animation ───────────────────────────────────────────────── */
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .card, .report-header {
-    animation: fadeIn 0.3s ease-out;
-  }
-  .card:nth-child(n+3) {
-    animation-delay: 0.05s;
+    .wrap { padding: 32px 20px 60px; }
+    .title { font-size: 22px; }
+    h2::before { left: -10px; }
   }
 </style>
 </head>
 <body>
 
-<div class="container">
+<div class="wrap">
 
-  <!-- Top bar -->
-  <div class="topbar">
-    <a class="topbar-brand" href="https://github.com/archorfight/url-xray" target="_blank" rel="noopener">
-      <span class="logo">X</span>
-      <span>URL X-Ray</span>
-    </a>
-    <span class="topbar-meta">2026-07-30 19:37</span>
-  </div>
-
-  <!-- Report header -->
-  <div class="report-header">
-    <div class="header-row">
-      <span class="type-badge">🌐 Website</span>
-      <button class="copy-btn" onclick="copyReport()">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/>
-          <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/>
-        </svg>
-        Copy
-      </button>
+  <div class="header">
+    <div class="header-meta">
+      <span class="badge">🌐 Website</span>
+      <span class="date">2026-07-30 19:46</span>
+      <button class="copy-btn" onclick="copyReport()">Copy</button>
     </div>
-    <h1 class="header-title">Grokipedia — AI生成的在线百科全书</h1>
-    <div class="header-url"><a href="https://grokipedia.com" target="_blank" rel="noopener">https://grokipedia.com</a></div>
+    <div class="title">Grokipedia — AI生成的在线百科全书</div>
+    <div class="url"><a href="https://grokipedia.com" target="_blank" rel="noopener">https://grokipedia.com</a></div>
   </div>
 
-  <!-- Report body -->
-  <div class="report-body" id="report-body">
-<div class="card"><h2 class="card-title">📊 基本信息</h2>
-<div class="table-wrap"><table>
-<thead><tr>
-<th>指标</th>
-<th>数据</th>
-</tr></thead><tbody>
-<tr>
-<td>月访问量</td>
-<td>6.7M</td>
-</tr>
-<tr>
-<td>月增长</td>
-<td>+36.85%</td>
-</tr>
-<tr>
-<td>类型</td>
-<td>内容平台 / AI百科</td>
-</tr>
-<tr>
-<td>定价</td>
-<td>免费（广告驱动）</td>
-</tr>
-</tbody></table></div>
-<div class="card"><h2 class="card-title">🎯 产品定位</h2>
+  <div class="doc" id="report-body">
+<h2>📊 基本信息</h2>
+<table><tbody>
+<tr><th>指标</th><th>数据</th></tr>
+<tr><td>月访问量</td><td>6.7M</td></tr>
+<tr><td>月增长</td><td>+36.85%</td></tr>
+<tr><td>类型</td><td>内容平台 / AI百科</td></tr>
+<tr><td>定价</td><td>免费（广告驱动）</td></tr>
+</tbody></table>
+<h2>🎯 产品定位</h2>
 <p><strong>一句话定位：</strong> &quot;AI生成的在线百科全书，旨在与维基百科竞争&quot;</p>
 <p>Grokipedia 是一个大胆的尝试——用AI替代人工编辑，生成全面的知识库。</p>
 <ul>
@@ -468,63 +301,56 @@
 <li><strong>目标用户：</strong> 信息搜索者（Google搜索导流）</li>
 <li><strong>关键差异：</strong> 每个条目都有AI生成+AI引用，实时更新</li>
 </ul>
-<div class="card"><h2 class="card-title">🔍 增长拆解</h2>
+<h2>🔍 增长拆解</h2>
 <p><strong>6.7M月访问 + 36.85%增长的秘密：</strong></p>
-<h3 class="sub-title">SEO是核心引擎</h3>
+<h3>SEO是核心引擎</h3>
 <ol>
 <li><strong>长尾关键词覆盖</strong> — AI可以批量生成数百万条目</li>
 <li><strong>程序化SEO</strong> — 每个搜索词都是一篇新文章</li>
 <li><strong>Google索引友好</strong> — 结构化数据 + 清晰的URL</li>
 </ol>
-<h3 class="sub-title">内容生成策略</h3>
+<h3>内容生成策略</h3>
 <ul>
 <li>用户搜索 → 触发AI生成 → 即时建页 → 被Google收录</li>
 <li>零编辑成本 = 无限内容产能</li>
 </ul>
 <blockquote><strong>关键洞察：</strong> 这不是在做百科全书，是在做&quot;SEO内容工厂&quot;——用AI的无限产能覆盖搜索意图。</blockquote>
-<div class="card"><h2 class="card-title">💰 商业模式推测</h2>
+<h2>💰 商业模式推测</h2>
 <ul>
 <li><strong>广告（主要）：</strong> 6.7M流量 → Display Ads</li>
 <li><strong>联盟营销：</strong> 推荐相关产品/课程</li>
 <li><strong>数据出售：</strong> AI训练数据需求</li>
 </ul>
-<div class="card"><h2 class="card-title"><span class="checkbox checked">☑</span>️ 可借鉴清单</h2>
+<h2><span class="cb done">☑</span>️ 可借鉴清单</h2>
 <ul>
-<li><span class="checkbox">☐</span> 分析其URL结构和页面模板</li>
-<li><span class="checkbox">☐</span> 看Google Search Console收录情况</li>
-<li><span class="checkbox">☐</span> 评估AI内容质量 vs 维基百科人工内容</li>
-<li><span class="checkbox">☐</span> 研究其&quot;搜索即生成&quot;的技术架构</li>
+<li><span class="cb">☐</span> 分析其URL结构和页面模板</li>
+<li><span class="cb">☐</span> 看Google Search Console收录情况</li>
+<li><span class="cb">☐</span> 评估AI内容质量 vs 维基百科人工内容</li>
+<li><span class="cb">☐</span> 研究其&quot;搜索即生成&quot;的技术架构</li>
 </ul>
-<div class="card"><h2 class="card-title">⚠️ 风险</h2>
+<h2>⚠️ 风险</h2>
 <ul>
 <li>Google对AI内容的政策收紧（HCU更新）</li>
 <li>准确性争议 → 用户信任度问题</li>
 <li>维基百科的品牌护城河极深</li>
 </ul>
-<hr class="section-sep">
+<hr>
 <p><em>数据来源：Toolify.ai 2026年7月榜单</em></p>
   </div>
 
-  <!-- Footer -->
   <div class="footer">
-    Generated by <a href="https://github.com/archorfight/url-xray" target="_blank" rel="noopener">url-xray</a> · X-ray any URL
+    Generated by <a href="https://github.com/archorfight/url-xray" target="_blank" rel="noopener">url-xray</a>
   </div>
 
 </div>
 
 <script>
 function copyReport() {
-  const body = document.getElementById('report-body');
-  // Get text content from cards, preserving structure
-  const text = body.innerText;
-  navigator.clipboard.writeText(text).then(() => {
-    const btn = document.querySelector('.copy-btn');
-    btn.classList.add('copied');
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.751.751 0 01.018-1.042.751.751 0 011.042-.018L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg> Copied';
-    setTimeout(() => {
-      btn.classList.remove('copied');
-      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg> Copy';
-    }, 2000);
+  navigator.clipboard.writeText(document.getElementById('report-body').innerText).then(() => {
+    const b = document.querySelector('.copy-btn');
+    b.textContent = '✓ Copied';
+    b.classList.add('copied');
+    setTimeout(() => { b.textContent = 'Copy'; b.classList.remove('copied'); }, 2000);
   });
 }
 </script>
