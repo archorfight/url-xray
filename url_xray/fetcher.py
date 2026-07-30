@@ -219,7 +219,7 @@ def check_sitemap(url: str):
         elif resp.status_code == 404:
             return (0, "not_found")
         else:
-            return (0, "not_found")
+            return (0, "error")
     except Exception:
         return (0, "error")
 
@@ -249,6 +249,15 @@ def _fetch_with_playwright(url: str) -> dict:
             page = browser.new_page(user_agent=_UA())
             page.goto(url, wait_until="networkidle", timeout=20000)
             page.wait_for_timeout(2000)  # extra wait for dynamic content
+
+            # Validate final URL after redirects (security)
+            final_url = page.url
+            try:
+                validate_url(final_url)
+            except ValueError:
+                data["error"] = f"Redirected to blocked URL: {final_url}"
+                browser.close()
+                return data
 
             data["status_code"] = 200
             html = page.content()
@@ -441,21 +450,22 @@ def fetch_github_info(url: str) -> dict:
                     "description": raw.get("description"),
                 }
 
-            # Fetch latest release info
-            try:
-                releases_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
-                with httpx.Client(timeout=15, follow_redirects=True) as rc:
-                    rresp = rc.get(releases_url, headers=gh_headers)
-                    if rresp.status_code == 200:
-                        rel = rresp.json()
-                        api_data["release_tag"] = rel.get("tag_name")
-                        api_data["release_date"] = rel.get("published_at")
-                    else:
-                        api_data["release_tag"] = None
-                        api_data["release_date"] = None
-            except Exception:
-                api_data["release_tag"] = None
-                api_data["release_date"] = None
+            # Fetch latest release info (only if repo API succeeded)
+            if api_data and not api_error:
+                try:
+                    releases_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+                    with httpx.Client(timeout=15, follow_redirects=True) as rc:
+                        rresp = rc.get(releases_url, headers=gh_headers)
+                        if rresp.status_code == 200:
+                            rel = rresp.json()
+                            api_data["release_tag"] = rel.get("tag_name")
+                            api_data["release_date"] = rel.get("published_at")
+                        else:
+                            api_data["release_tag"] = None
+                            api_data["release_date"] = None
+                except Exception:
+                    api_data["release_tag"] = None
+                    api_data["release_date"] = None
     except httpx.HTTPStatusError as e:
         api_error = f"GitHub API error: {e.response.status_code}"
     except Exception as e:
