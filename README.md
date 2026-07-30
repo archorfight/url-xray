@@ -61,7 +61,7 @@ url-xray https://example.com --stdout
 # Use DeepSeek
 url-xray https://example.com \
   --base-url https://api.deepseek.com/v1 \
-  --model deepseek-chat
+  --model deepseek-v4-flash
 
 # Use any OpenAI-compatible provider
 url-xray https://example.com \
@@ -83,7 +83,7 @@ All config via environment variables or `.env` file (see `.env.example`):
 
 Any OpenAI-compatible API:
 - OpenAI (`gpt-4o`, `gpt-4o-mini`)
-- DeepSeek (`deepseek-chat`)
+- DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`)
 - OpenRouter (100+ models)
 - Zhipu/GLM (`glm-4`)
 - Local LLMs via LM Studio / Ollama (OpenAI compat mode)

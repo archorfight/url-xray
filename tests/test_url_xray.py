@@ -699,19 +699,14 @@ class TestGithub404SkipsReleases:
         with patch("url_xray.fetcher.fetch_page", return_value={
             "url": "https://github.com/nonexistent/ghost",
             "error": None, "title": "", "body_text": "", "body_text_length": 0,
-        }), patch("url_xray.fetcher.httpx.Client") as mock_cls:
-            mc = MagicMock()
-            mc.__enter__.return_value = mc
-            mc.__exit__.return_value = False
-            mc.get.return_value = repo_404
-            mock_cls.return_value = mc
+        }), patch("url_xray.fetcher._fetch_safe", return_value=repo_404) as mock_safe:
 
             from url_xray.fetcher import fetch_github_info
             result = fetch_github_info("https://github.com/nonexistent/ghost")
 
         assert result.get("github_api_data") == {}
         assert result.get("github_api_error") == "GitHub repo not found (404)"
-        assert mc.get.call_count == 1  # only repo API, no releases call
+        assert mock_safe.call_count == 1  # only repo API, no releases call
 
 
 # ── Prompt date + evidence rules (merged into 1 test per language) ──
@@ -827,45 +822,37 @@ class TestGithubReleaseData:
     """ISSUE 4a: fetch_github_info should include release_tag/release_date."""
 
     def test_github_release_data(self):
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
+        import httpx
+
+        repo_resp = MagicMock(spec=httpx.Response)
+        repo_resp.status_code = 200
+        repo_resp.headers = {}
+        repo_resp.raise_for_status = MagicMock()
+        repo_resp.json.return_value = {
+            "stargazers_count": 100,
+            "forks_count": 20,
+            "open_issues_count": 5,
+            "license": {"spdx_id": "MIT"},
+            "created_at": "2020-01-01T00:00:00Z",
+            "updated_at": "2025-06-01T00:00:00Z",
+            "pushed_at": "2025-06-15T00:00:00Z",
+            "language": "Python",
+            "default_branch": "main",
+            "description": "A test repo",
+        }
+
+        release_resp = MagicMock(spec=httpx.Response)
+        release_resp.status_code = 200
+        release_resp.json.return_value = {
+            "tag_name": "v2.0.0",
+            "published_at": "2025-05-01T00:00:00Z",
+        }
+
         with patch("url_xray.fetcher.fetch_page", return_value={
             "url": "https://github.com/u/r", "error": None, "title": "Repo",
             "body_text": "readme content", "body_text_length": 100,
-        }), patch("url_xray.fetcher.httpx.Client") as mock_client_cls:
-            # Build mock responses for repo API and releases API
-            import httpx
-            from unittest.mock import MagicMock
-
-            repo_resp = MagicMock(spec=httpx.Response)
-            repo_resp.status_code = 200
-            repo_resp.headers = {}
-            repo_resp.raise_for_status = MagicMock()
-            repo_resp.json.return_value = {
-                "stargazers_count": 100,
-                "forks_count": 20,
-                "open_issues_count": 5,
-                "license": {"spdx_id": "MIT"},
-                "created_at": "2020-01-01T00:00:00Z",
-                "updated_at": "2025-06-01T00:00:00Z",
-                "pushed_at": "2025-06-15T00:00:00Z",
-                "language": "Python",
-                "default_branch": "main",
-                "description": "A test repo",
-            }
-
-            release_resp = MagicMock(spec=httpx.Response)
-            release_resp.status_code = 200
-            release_resp.json.return_value = {
-                "tag_name": "v2.0.0",
-                "published_at": "2025-05-01T00:00:00Z",
-            }
-
-            mock_client = MagicMock()
-            mock_client.__enter__ = MagicMock(return_value=mock_client)
-            mock_client.__exit__ = MagicMock(return_value=False)
-            # First call → repo data, second call → release data
-            mock_client.get.side_effect = [repo_resp, release_resp]
-            mock_client_cls.return_value = mock_client
+        }), patch("url_xray.fetcher._fetch_safe", side_effect=[repo_resp, release_resp]):
 
             from url_xray.fetcher import fetch_github_info
             result = fetch_github_info("https://github.com/u/r")

@@ -37,7 +37,7 @@ Examples:
   url-xray https://example.com
   url-xray https://mp.weixin.qq.com/s/xxxxx --output ./reports
   url-xray https://github.com/user/repo --model gpt-4o
-  url-xray https://example.com --base-url https://api.deepseek.com/v1 --model deepseek-chat
+  url-xray https://example.com --base-url https://api.deepseek.com/v1 --model deepseek-v4-flash
 
 Environment variables (or .env file):
   LLM_API_KEY    Required. Your API key.

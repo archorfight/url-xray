@@ -2,7 +2,6 @@
 
 import re
 import os
-import socket
 import json
 from datetime import datetime
 from urllib.parse import urlparse
@@ -297,7 +296,7 @@ def _fetch_with_playwright(url: str) -> dict:
             # Basic stats from rendered DOM
             data["img_count"] = page.locator("img").count()
             data["link_count"] = page.locator("a").count()
-            data["h1_tags"] = [await_el.inner_text() for await_el in []]  # filled below
+            data["h1_tags"] = [el.inner_text() for el in page.locator("h1").all()]
             data["external_links"] = 0  # approximate
 
             browser.close()
@@ -450,55 +449,53 @@ def fetch_github_info(url: str) -> dict:
     api_data = {}
     api_error = None
 
+    # GitHub API headers
+    gh_headers = {"Accept": "application/vnd.github+json"}
+    gh_token = os.environ.get("GITHUB_TOKEN")
+    if gh_token:
+        gh_headers["Authorization"] = f"Bearer {gh_token}"
+
     try:
-        gh_headers = {"Accept": "application/vnd.github+json"}
-        # Optional: use GITHUB_TOKEN for higher rate limit (5000/hr vs 60/hr)
-        gh_token = os.environ.get("GITHUB_TOKEN")
-        if gh_token:
-            gh_headers["Authorization"] = f"Bearer {gh_token}"
-        
-        with httpx.Client(timeout=15, follow_redirects=True) as client:
-            resp = client.get(api_url, headers=gh_headers)
+        resp = _fetch_safe(api_url, timeout=15, extra_headers=gh_headers)
 
-            # Check for rate limit
-            remaining = resp.headers.get("X-RateLimit-Remaining", "")
-            if resp.status_code == 403 and remaining == "0":
-                api_error = "GitHub API rate limited"
-            elif resp.status_code == 404:
-                api_error = "GitHub repo not found (404)"
-            else:
-                resp.raise_for_status()
-                raw = resp.json()
-                license_info = raw.get("license")
-                api_data = {
-                    "stars": raw.get("stargazers_count"),
-                    "forks": raw.get("forks_count"),
-                    "open_issues": raw.get("open_issues_count"),
-                    "license": license_info.get("spdx_id") if license_info else None,
-                    "created_at": raw.get("created_at"),
-                    "updated_at": raw.get("updated_at"),
-                    "pushed_at": raw.get("pushed_at"),
-                    "language": raw.get("language"),
-                    "default_branch": raw.get("default_branch"),
-                    "description": raw.get("description"),
-                }
+        # Check for rate limit
+        remaining = resp.headers.get("X-RateLimit-Remaining", "")
+        if resp.status_code == 403 and remaining == "0":
+            api_error = "GitHub API rate limited"
+        elif resp.status_code == 404:
+            api_error = "GitHub repo not found (404)"
+        else:
+            resp.raise_for_status()
+            raw = resp.json()
+            license_info = raw.get("license")
+            api_data = {
+                "stars": raw.get("stargazers_count"),
+                "forks": raw.get("forks_count"),
+                "open_issues": raw.get("open_issues_count"),
+                "license": license_info.get("spdx_id") if license_info else None,
+                "created_at": raw.get("created_at"),
+                "updated_at": raw.get("updated_at"),
+                "pushed_at": raw.get("pushed_at"),
+                "language": raw.get("language"),
+                "default_branch": raw.get("default_branch"),
+                "description": raw.get("description"),
+            }
 
-            # Fetch latest release info (only if repo API succeeded)
-            if api_data and not api_error:
-                try:
-                    releases_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
-                    with httpx.Client(timeout=15, follow_redirects=True) as rc:
-                        rresp = rc.get(releases_url, headers=gh_headers)
-                        if rresp.status_code == 200:
-                            rel = rresp.json()
-                            api_data["release_tag"] = rel.get("tag_name")
-                            api_data["release_date"] = rel.get("published_at")
-                        else:
-                            api_data["release_tag"] = None
-                            api_data["release_date"] = None
-                except Exception:
+        # Fetch latest release info (only if repo API succeeded)
+        if api_data and not api_error:
+            try:
+                releases_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+                rresp = _fetch_safe(releases_url, timeout=15, extra_headers=gh_headers)
+                if rresp.status_code == 200:
+                    rel = rresp.json()
+                    api_data["release_tag"] = rel.get("tag_name")
+                    api_data["release_date"] = rel.get("published_at")
+                else:
                     api_data["release_tag"] = None
                     api_data["release_date"] = None
+            except Exception:
+                api_data["release_tag"] = None
+                api_data["release_date"] = None
     except httpx.HTTPStatusError as e:
         api_error = f"GitHub API error: {e.response.status_code}"
     except Exception as e:
