@@ -1,238 +1,15 @@
-"""HTML report renderer — Linear-inspired dark theme with luminance stacking."""
-
-import html
-from datetime import datetime
-
-
-def _md_to_html(md: str) -> str:
-    """Minimal markdown-to-HTML converter (no external deps).
-
-    Handles: headings, bold, italic, code blocks, inline code,
-    tables, blockquotes, bullet lists, numbered lists, checkboxes, hr.
-    """
-    import re
-
-    lines = md.split("\n")
-    out = []
-    in_table = False
-    in_code = False
-    in_list = False
-    in_olist = False
-    table_rows = []
-
-    def esc(text):
-        return html.escape(text)
-
-    def inline(text):
-        # Process links BEFORE escaping (we need raw brackets)
-        link_placeholder = []
-        def _capture_link(m):
-            link_placeholder.append(f'<a href="{esc(m.group(2))}" target="_blank" rel="noopener">{esc(m.group(1))}</a>')
-            return f"\x00LINK{len(link_placeholder)-1}\x00"
-        text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _capture_link, text)
-
-        text = esc(text)
-
-        # Bold
-        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-        # Italic (avoid matching ** by requiring non-* before)
-        text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<em>\1</em>", text)
-        # Inline code
-        text = re.sub(r"`([^`]+)`", r'<code class="inline-code">\1</code>', text)
-
-        # Restore links
-        def _restore_link(m):
-            return link_placeholder[int(m.group(1))]
-        text = re.sub(r"\x00LINK(\d+)\x00", _restore_link, text)
-
-        # Checkbox
-        text = text.replace("\u2610", '<span class="checkbox">\u2610</span>')
-        text = text.replace("\u2611", '<span class="checkbox checked">\u2611</span>')
-        return text
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-
-        # Code block
-        if line.strip().startswith("```"):
-            if in_code:
-                out.append("</code></pre>")
-                in_code = False
-            else:
-                lang = line.strip().lstrip("`").strip()
-                out.append(f'<pre class="code-block"><code class="language-{lang}">')
-                in_code = True
-            i += 1
-            continue
-
-        if in_code:
-            out.append(esc(line))
-            i += 1
-            continue
-
-        # Table detection
-        if "|" in line and line.strip().startswith("|"):
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            # Skip separator rows
-            if all(re.match(r"^[-:]+$", c) for c in cells):
-                i += 1
-                continue
-            table_rows.append(cells)
-            in_table = True
-            i += 1
-            continue
-        elif in_table:
-            # Flush table
-            if table_rows:
-                out.append('<div class="table-wrap"><table>')
-                out.append("<thead><tr>")
-                for c in table_rows[0]:
-                    out.append(f"<th>{inline(c)}</th>")
-                out.append("</tr></thead><tbody>")
-                for row in table_rows[1:]:
-                    out.append("<tr>")
-                    for c in row:
-                        out.append(f"<td>{inline(c)}</td>")
-                    out.append("</tr>")
-                out.append("</tbody></table></div>")
-            table_rows = []
-            in_table = False
-
-        # Horizontal rule / section separator
-        if re.match(r"^-{3,}$", line.strip()) or re.match(r"^---+$", line.strip()):
-            out.append('<hr class="section-sep">')
-            i += 1
-            continue
-
-        # Headings
-        m = re.match(r"^(#{1,4})\s+(.+)", line)
-        if m:
-            level = len(m.group(1))
-            text = inline(m.group(2))
-            # Map ## to card sections
-            if level == 2:
-                out.append(f'<div class="card"><h2 class="card-title">{text}</h2>')
-            elif level == 3:
-                out.append(f'<h3 class="sub-title">{text}</h3>')
-            elif level == 1:
-                out.append(f'<h1 class="report-title">{text}</h1>')
-            else:
-                out.append(f'<h{level}>{text}</h{level}>')
-            i += 1
-            continue
-
-        # Numbered list
-        m = re.match(r"^(\d+)\.\s+(.+)", line)
-        if m:
-            if not in_olist:
-                out.append("<ol>")
-                in_olist = True
-            in_list = False
-            out.append(f"<li>{inline(m.group(2))}</li>")
-            i += 1
-            continue
-        elif in_olist:
-            out.append("</ol>")
-            in_olist = False
-
-        # Bullet list
-        m = re.match(r"^[-*]\s+(.+)", line)
-        if m:
-            if not in_list:
-                out.append("<ul>")
-                in_list = True
-            in_olist = False
-            content_text = m.group(1)
-            # Handle checkbox syntax before inline processing
-            content_text = re.sub(r"^\[ \]\s*", "\u2610 ", content_text)
-            content_text = re.sub(r"^\[x\]\s*", "\u2611 ", content_text, flags=re.IGNORECASE)
-            out.append(f"<li>{inline(content_text)}</li>")
-            i += 1
-            continue
-        elif in_list:
-            out.append("</ul>")
-            in_list = False
-
-        # Blockquote
-        if line.strip().startswith(">"):
-            text = inline(line.strip().lstrip(">").strip())
-            out.append(f"<blockquote>{text}</blockquote>")
-            i += 1
-            continue
-
-        # Empty line
-        if not line.strip():
-            i += 1
-            continue
-
-        # Normal paragraph
-        out.append(f"<p>{inline(line)}</p>")
-        i += 1
-
-    # Flush remaining
-    if in_list:
-        out.append("</ul>")
-    if in_olist:
-        out.append("</ol>")
-    if in_code:
-        out.append("</code></pre>")
-    if table_rows:
-        out.append('<div class="table-wrap"><table>')
-        out.append("<thead><tr>")
-        for c in table_rows[0]:
-            out.append(f"<th>{inline(c)}</th>")
-        out.append("</tr></thead><tbody>")
-        for row in table_rows[1:]:
-            out.append("<tr>")
-            for c in row:
-                out.append(f"<td>{inline(c)}</td>")
-            out.append("</tr>")
-        out.append("</tbody></table></div>")
-
-    return "\n".join(out)
-
-
-# ── Type accent system ──────────────────────────────────────────────
-# Each type gets a subtle hue used only for the header border-tint,
-# the type badge, and blockquote left-border. Everything else is
-# achromatic — Linear philosophy: one accent, used sparingly.
-
-_TYPE_STYLES = {
-    "website": {"hue": "#5e6ad2", "emoji": "\U0001f310", "label": "Website"},      # brand indigo
-    "article": {"hue": "#e2b341", "emoji": "\U0001f4f0", "label": "Article"},      # amber
-    "product": {"hue": "#8b5cf6", "emoji": "\U0001f680", "label": "Product"},      # violet
-    "github":  {"hue": "#27a644", "emoji": "\U0001f4e6", "label": "GitHub"},       # green
-}
-_TYPE_DEFAULT = {"hue": "#62666d", "emoji": "\U0001f517", "label": "URL"}
-
-
-def render_html(result: dict) -> str:
-    """Render analysis result as a styled HTML page (Linear-inspired)."""
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
-    url = html.escape(result.get("url", ""))
-    url_type = result.get("type", "unknown")
-    title = html.escape(result.get("title", url)[:100])
-    report_md = result.get("report", "")
-    report_html = _md_to_html(report_md)
-
-    ts = _TYPE_STYLES.get(url_type, _TYPE_DEFAULT)
-    hue = ts["hue"]
-    is_zh = any(ord(c) > 0x4e00 for c in report_md[:300])
-    lang = "zh" if is_zh else "en"
-
-    return f"""<!DOCTYPE html>
-<html lang="{lang}">
+<!DOCTYPE html>
+<html lang="zh">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>URL X-Ray — {title}</title>
+<title>URL X-Ray — PDFgear — 免费PDF编辑工具</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   /* ── Linear-inspired design tokens ───────────────────────────── */
-  :root {{
+  :root {
     --bg-marketing:   #08090a;
     --bg-panel:       #0f1011;
     --bg-elevated:    #191a1b;
@@ -247,8 +24,8 @@ def render_html(result: dict) -> str:
     --border-standard: rgba(255,255,255,0.08);
     --border-strong:  rgba(255,255,255,0.12);
 
-    --accent-brand:   {hue};
-    --accent-hover:   {hue}cc;
+    --accent-brand:   #8b5cf6;
+    --accent-hover:   #8b5cf6cc;
     --green:          #27a644;
     --red:            #ef4444;
 
@@ -259,15 +36,15 @@ def render_html(result: dict) -> str:
     --radius-2xl:     16px;
 
     --shadow-elevated: 0 0 0 1px var(--border-standard), rgba(0,0,0,0.4) 0 2px 4px;
-  }}
+  }
 
   /* ── Reset ───────────────────────────────────────────────────── */
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  *::selection {{ background: var(--accent-brand); color: white; }}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  *::selection { background: var(--accent-brand); color: white; }
 
-  html {{ scroll-behavior: smooth; }}
+  html { scroll-behavior: smooth; }
 
-  body {{
+  body {
     background: var(--bg-marketing);
     color: var(--text-secondary);
     font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
@@ -279,25 +56,25 @@ def render_html(result: dict) -> str:
     padding: 0;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-  }}
+  }
 
   /* ── Layout ──────────────────────────────────────────────────── */
-  .container {{
+  .container {
     max-width: 860px;
     margin: 0 auto;
     padding: 32px 24px 64px;
-  }}
+  }
 
   /* ── Top bar ─────────────────────────────────────────────────── */
-  .topbar {{
+  .topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 40px;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--border-subtle);
-  }}
-  .topbar-brand {{
+  }
+  .topbar-brand {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -306,57 +83,57 @@ def render_html(result: dict) -> str:
     color: var(--text-secondary);
     text-decoration: none;
     letter-spacing: -0.01em;
-  }}
-  .topbar-brand:hover {{ color: var(--text-primary); }}
-  .topbar-brand .logo {{
+  }
+  .topbar-brand:hover { color: var(--text-primary); }
+  .topbar-brand .logo {
     width: 20px; height: 20px;
     border-radius: var(--radius-sm);
     background: var(--accent-brand);
     display: flex; align-items: center; justify-content: center;
     font-size: 11px; font-weight: 700;
     color: white;
-  }}
-  .topbar-meta {{
+  }
+  .topbar-meta {
     font-size: 12px;
     font-weight: 400;
     color: var(--text-faint);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     letter-spacing: 0;
-  }}
+  }
 
   /* ── Report header ───────────────────────────────────────────── */
-  .report-header {{
+  .report-header {
     position: relative;
     padding: 32px 0 28px;
     margin-bottom: 8px;
     border-bottom: 1px solid var(--border-subtle);
-  }}
-  .report-header::before {{
+  }
+  .report-header::before {
     content: '';
     position: absolute;
     left: -24px; right: -24px; top: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, {hue}40, transparent);
-  }}
-  .header-row {{
+    background: linear-gradient(90deg, transparent, #8b5cf640, transparent);
+  }
+  .header-row {
     display: flex;
     align-items: center;
     gap: 10px;
     margin-bottom: 16px;
-  }}
-  .type-badge {{
+  }
+  .type-badge {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 3px 10px;
     border-radius: 9999px;
-    background: {hue}18;
-    color: {hue};
+    background: #8b5cf618;
+    color: #8b5cf6;
     font-size: 12px;
     font-weight: 500;
-    border: 1px solid {hue}30;
+    border: 1px solid #8b5cf630;
     letter-spacing: -0.01em;
-  }}
-  .copy-btn {{
+  }
+  .copy-btn {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
@@ -372,55 +149,55 @@ def render_html(result: dict) -> str:
     font-weight: 500;
     letter-spacing: -0.01em;
     transition: all 0.15s ease;
-  }}
-  .copy-btn:hover {{
+  }
+  .copy-btn:hover {
     background: rgba(255,255,255,0.08);
     border-color: var(--border-strong);
     color: var(--text-primary);
-  }}
-  .copy-btn.copied {{
+  }
+  .copy-btn.copied {
     background: var(--green);
     border-color: var(--green);
     color: white;
-  }}
-  .header-title {{
+  }
+  .header-title {
     font-size: 26px;
     font-weight: 600;
     line-height: 1.25;
     letter-spacing: -0.028em;
     color: var(--text-primary);
     margin-bottom: 8px;
-  }}
-  .header-url {{
+  }
+  .header-url {
     font-size: 13px;
     font-weight: 400;
     color: var(--text-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     letter-spacing: 0;
     word-break: break-all;
-  }}
-  .header-url a {{
+  }
+  .header-url a {
     color: var(--text-muted);
     text-decoration: none;
     transition: color 0.15s ease;
-  }}
-  .header-url a:hover {{ color: var(--accent-brand); }}
+  }
+  .header-url a:hover { color: var(--accent-brand); }
 
   /* ── Card (## section) ───────────────────────────────────────── */
-  .card {{
+  .card {
     background: var(--bg-panel);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-xl);
     padding: 24px 28px;
     margin-top: 16px;
     transition: border-color 0.15s ease;
-  }}
-  .card:hover {{
+  }
+  .card:hover {
     border-color: var(--border-standard);
-  }}
-  .card:first-of-type {{ margin-top: 24px; }}
+  }
+  .card:first-of-type { margin-top: 24px; }
 
-  .card-title {{
+  .card-title {
     font-size: 15px;
     font-weight: 600;
     color: var(--text-primary);
@@ -431,86 +208,86 @@ def render_html(result: dict) -> str:
     display: flex;
     align-items: center;
     gap: 8px;
-  }}
-  .card-title::before {{
+  }
+  .card-title::before {
     content: '';
     width: 3px; height: 14px;
     background: var(--accent-brand);
     border-radius: 2px;
     opacity: 0.8;
-  }}
+  }
 
-  .sub-title {{
+  .sub-title {
     font-size: 14px;
     font-weight: 500;
     color: var(--text-muted);
     margin: 20px 0 8px;
     letter-spacing: -0.01em;
-  }}
-  .sub-title:first-child {{ margin-top: 0; }}
+  }
+  .sub-title:first-child { margin-top: 0; }
 
   /* ── Text ────────────────────────────────────────────────────── */
-  p {{
+  p {
     margin: 8px 0;
     color: var(--text-secondary);
     font-size: 14px;
     line-height: 1.65;
-  }}
-  strong {{
+  }
+  strong {
     color: var(--text-primary);
     font-weight: 600;
-  }}
-  em {{
+  }
+  em {
     color: var(--text-muted);
     font-style: italic;
-  }}
-  a {{
+  }
+  a {
     color: var(--accent-brand);
     text-decoration: none;
     transition: color 0.15s ease;
-  }}
-  a:hover {{
+  }
+  a:hover {
     color: var(--accent-hover);
     text-decoration: underline;
     text-underline-offset: 2px;
-  }}
+  }
 
   /* ── Lists ───────────────────────────────────────────────────── */
-  ul, ol {{
+  ul, ol {
     margin: 8px 0;
     padding-left: 20px;
-  }}
-  li {{
+  }
+  li {
     margin: 5px 0;
     font-size: 14px;
     line-height: 1.65;
     color: var(--text-secondary);
-  }}
-  li::marker {{
+  }
+  li::marker {
     color: var(--text-faint);
-  }}
-  .checkbox {{
+  }
+  .checkbox {
     margin-right: 6px;
     color: var(--text-faint);
     font-size: 14px;
-  }}
-  .checkbox.checked {{
+  }
+  .checkbox.checked {
     color: var(--green);
-  }}
+  }
 
   /* ── Tables ──────────────────────────────────────────────────── */
-  .table-wrap {{
+  .table-wrap {
     overflow-x: auto;
     margin: 12px -8px;
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-subtle);
-  }}
-  table {{
+  }
+  table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
-  }}
-  th {{
+  }
+  th {
     background: var(--bg-elevated);
     padding: 10px 14px;
     text-align: left;
@@ -520,24 +297,24 @@ def render_html(result: dict) -> str:
     letter-spacing: 0.02em;
     text-transform: uppercase;
     border-bottom: 1px solid var(--border-subtle);
-  }}
-  td {{
+  }
+  td {
     padding: 10px 14px;
     border-bottom: 1px solid var(--border-subtle);
     color: var(--text-secondary);
-  }}
-  tr:last-child td {{
+  }
+  tr:last-child td {
     border-bottom: none;
-  }}
-  tbody tr {{
+  }
+  tbody tr {
     transition: background 0.1s ease;
-  }}
-  tbody tr:hover {{
+  }
+  tbody tr:hover {
     background: rgba(255,255,255,0.02);
-  }}
+  }
 
   /* ── Code ────────────────────────────────────────────────────── */
-  .code-block {{
+  .code-block {
     background: var(--bg-marketing);
     border: 1px solid var(--border-standard);
     border-radius: var(--radius-lg);
@@ -548,8 +325,8 @@ def render_html(result: dict) -> str:
     line-height: 1.55;
     font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--text-secondary);
-  }}
-  .inline-code {{
+  }
+  .inline-code {
     background: rgba(255,255,255,0.06);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
@@ -557,10 +334,10 @@ def render_html(result: dict) -> str:
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     color: var(--text-primary);
     letter-spacing: 0;
-  }}
+  }
 
   /* ── Blockquote ──────────────────────────────────────────────── */
-  blockquote {{
+  blockquote {
     border-left: 2px solid var(--accent-brand);
     padding: 10px 16px;
     margin: 12px 0;
@@ -568,23 +345,23 @@ def render_html(result: dict) -> str:
     border-radius: 0 var(--radius-md) var(--radius-md) 0;
     color: var(--text-muted);
     font-size: 14px;
-  }}
+  }
 
   /* ── Separator ───────────────────────────────────────────────── */
-  .section-sep {{
+  .section-sep {
     border: none;
     border-top: 1px solid var(--border-subtle);
     margin: 24px 0;
-  }}
+  }
 
   /* ── Report title (#) ────────────────────────────────────────── */
-  .report-title {{
+  .report-title {
     font-size: 20px;
     font-weight: 600;
     margin-bottom: 16px;
     color: var(--text-primary);
     letter-spacing: -0.022em;
-  }}
+  }
 
   /* ── Close card ──────────────────────────────────────────────── */
   /* When a new card starts, close the previous one automatically.
@@ -593,40 +370,40 @@ def render_html(result: dict) -> str:
      by injecting </div> before each new card (except the first). */
 
   /* ── Footer ──────────────────────────────────────────────────── */
-  .footer {{
+  .footer {
     margin-top: 48px;
     padding-top: 20px;
     border-top: 1px solid var(--border-subtle);
     text-align: center;
     font-size: 12px;
     color: var(--text-faint);
-  }}
-  .footer a {{
+  }
+  .footer a {
     color: var(--text-muted);
-  }}
-  .footer a:hover {{
+  }
+  .footer a:hover {
     color: var(--accent-brand);
-  }}
+  }
 
   /* ── Responsive ──────────────────────────────────────────────── */
-  @media (max-width: 640px) {{
-    .container {{ padding: 20px 16px 48px; }}
-    .header-title {{ font-size: 20px; }}
-    .card {{ padding: 18px 20px; border-radius: var(--radius-lg); }}
-    .report-header::before {{ left: -16px; right: -16px; }}
-  }}
+  @media (max-width: 640px) {
+    .container { padding: 20px 16px 48px; }
+    .header-title { font-size: 20px; }
+    .card { padding: 18px 20px; border-radius: var(--radius-lg); }
+    .report-header::before { left: -16px; right: -16px; }
+  }
 
   /* ── Animation ───────────────────────────────────────────────── */
-  @keyframes fadeIn {{
-    from {{ opacity: 0; transform: translateY(8px); }}
-    to {{ opacity: 1; transform: translateY(0); }}
-  }}
-  .card, .report-header {{
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .card, .report-header {
     animation: fadeIn 0.3s ease-out;
-  }}
-  .card:nth-child(n+3) {{
+  }
+  .card:nth-child(n+3) {
     animation-delay: 0.05s;
-  }}
+  }
 </style>
 </head>
 <body>
@@ -639,13 +416,13 @@ def render_html(result: dict) -> str:
       <span class="logo">X</span>
       <span>URL X-Ray</span>
     </a>
-    <span class="topbar-meta">{date}</span>
+    <span class="topbar-meta">2026-07-30 19:37</span>
   </div>
 
   <!-- Report header -->
   <div class="report-header">
     <div class="header-row">
-      <span class="type-badge">{ts["emoji"]} {ts["label"]}</span>
+      <span class="type-badge">🚀 Product</span>
       <button class="copy-btn" onclick="copyReport()">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
           <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/>
@@ -654,13 +431,101 @@ def render_html(result: dict) -> str:
         Copy
       </button>
     </div>
-    <h1 class="header-title">{title}</h1>
-    <div class="header-url"><a href="{url}" target="_blank" rel="noopener">{url}</a></div>
+    <h1 class="header-title">PDFgear — 免费PDF编辑工具</h1>
+    <div class="header-url"><a href="https://www.pdfgear.com" target="_blank" rel="noopener">https://www.pdfgear.com</a></div>
   </div>
 
   <!-- Report body -->
   <div class="report-body" id="report-body">
-{report_html}
+<div class="card"><h2 class="card-title">📊 基本信息</h2>
+<div class="table-wrap"><table>
+<thead><tr>
+<th>指标</th>
+<th>数据</th>
+</tr></thead><tbody>
+<tr>
+<td>月访问量</td>
+<td>3.4M</td>
+</tr>
+<tr>
+<td>月增长</td>
+<td>+10.80%</td>
+</tr>
+<tr>
+<td>类型</td>
+<td>桌面软件 / SaaS</td>
+</tr>
+<tr>
+<td>定价</td>
+<td>完全免费</td>
+</tr>
+</tbody></table></div>
+<div class="card"><h2 class="card-title">🎯 产品定位</h2>
+<p><strong>一句话定位：</strong> &quot;免费PDF软件，用于编辑、转换和管理PDF文档&quot;</p>
+<p>PDFgear 选择了PDF工具这个&quot;无聊但刚需&quot;的赛道，用免费策略撕开了Adobe的市场。</p>
+<ul>
+<li><strong>核心赌注：</strong> &quot;免费&quot;比&quot;便宜&quot;更有杀伤力</li>
+<li><strong>目标用户：</strong> 任何需要处理PDF的人（极其广泛）</li>
+<li><strong>关键差异：</strong> 功能不输付费竞品，价格直接为0</li>
+</ul>
+<div class="card"><h2 class="card-title">💰 商业模式</h2>
+<h3 class="sub-title">免费策略的成本结构</h3>
+<ul>
+<li><strong>桌面应用：</strong> 一次性下载，无服务器成本</li>
+<li><strong>变现路径：</strong> 不明确——可能是用户数据/推广/未来付费功能</li>
+</ul>
+<blockquote><strong>反直觉：</strong> 在&quot;一切皆SaaS&quot;的时代，一款完全免费的桌面PDF工具反而脱颖而出。这说明用户对订阅疲劳已经到了极点。</blockquote>
+<div class="card"><h2 class="card-title">🔍 增长拆解</h2>
+<h3 class="sub-title">3.4M月访问从哪来？</h3>
+<ol>
+<li><strong>搜索意图极强</strong> — &quot;free PDF editor&quot; 是超高搜索量关键词</li>
+<li><strong>竞品定价驱动</strong> — Adobe Acrobat $20/月，PDFgear免费</li>
+<li><strong>口碑传播</strong> — Reddit、YouTube博主自发推荐</li>
+<li><strong>下载站分发</strong> — CNET、Softpedia等软件下载站</li>
+</ol>
+<h3 class="sub-title">SEO关键词矩阵推测</h3>
+<div class="table-wrap"><table>
+<thead><tr>
+<th>关键词</th>
+<th>搜索意图</th>
+<th>月搜索量</th>
+</tr></thead><tbody>
+<tr>
+<td>free pdf editor</td>
+<td>寻找免费替代</td>
+<td>450K+</td>
+</tr>
+<tr>
+<td>pdf merge online</td>
+<td>合并需求</td>
+<td>200K+</td>
+</tr>
+<tr>
+<td>pdf to word</td>
+<td>格式转换</td>
+<td>500K+</td>
+</tr>
+<tr>
+<td>compress pdf</td>
+<td>压缩需求</td>
+<td>300K+</td>
+</tr>
+</tbody></table></div>
+<div class="card"><h2 class="card-title"><span class="checkbox checked">☑</span>️ 可借鉴清单</h2>
+<ul>
+<li><span class="checkbox">☐</span> 分析其落地页文案：如何说服用户&quot;免费=靠谱&quot;</li>
+<li><span class="checkbox">☐</span> 对比Adobe的定价页 vs PDFgear的免费页</li>
+<li><span class="checkbox">☐</span> 看它的下载转化漏斗设计</li>
+<li><span class="checkbox">☐</span> 研究其SEO内容策略（博客/教程/对比页）</li>
+</ul>
+<div class="card"><h2 class="card-title">⚠️ 风险</h2>
+<ul>
+<li>免费模式的长期变现能力存疑</li>
+<li>Adobe可能推出免费基础版反击</li>
+<li>桌面软件的更新分发不如SaaS灵活</li>
+</ul>
+<hr class="section-sep">
+<p><em>数据来源：Toolify.ai 2026年7月榜单</em></p>
   </div>
 
   <!-- Footer -->
@@ -671,21 +536,21 @@ def render_html(result: dict) -> str:
 </div>
 
 <script>
-function copyReport() {{
+function copyReport() {
   const body = document.getElementById('report-body');
   // Get text content from cards, preserving structure
   const text = body.innerText;
-  navigator.clipboard.writeText(text).then(() => {{
+  navigator.clipboard.writeText(text).then(() => {
     const btn = document.querySelector('.copy-btn');
     btn.classList.add('copied');
     btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.751.751 0 01.018-1.042.751.751 0 011.042-.018L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg> Copied';
-    setTimeout(() => {{
+    setTimeout(() => {
       btn.classList.remove('copied');
       btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg> Copy';
-    }}, 2000);
-  }});
-}}
+    }, 2000);
+  });
+}
 </script>
 
 </body>
-</html>"""
+</html>
