@@ -503,6 +503,260 @@ class TestScoringDrift:
         assert "simple average" in PROMPTS_EN["website"].lower()
 
 
+# ── Shared helpers for new behavioral tests ──────────────────────────
+
+
+def _mock_fetch_ok(**overrides) -> dict:
+    """A minimal fetch result with sane defaults for teardown tests."""
+    return {
+        "url": "https://example.com", "error": None, "title": "Example",
+        "body_text": "x" * 500, "body_text_length": 500,
+        "html_size_kb": 50, "status_code": 200, "img_count": 1,
+        "link_count": 1, "external_links": 0, "h1_tags": ["Hi"],
+        "frameworks_detected": [], "has_jsonld": False,
+        **overrides,
+    }
+
+
+def _capture_prompt(return_content="## 一句话结论\nok"):
+    """Return a (capture_dict, side_effect_fn) pair for patching call_llm."""
+    captured = {}
+    def fn(prompt, **kwargs):
+        captured["prompt"] = prompt
+        return return_content
+    return captured, fn
+
+
+# ── Playwright safety: route handler aborts private nav, allows safe + sub-resources ──
+
+
+class TestPlaywrightRouteSafety:
+    """Behavioral: Playwright route handler — abort private nav, allow safe + sub-resources."""
+
+    def test_route_aborts_private_nav_but_passes_safe_and_subresources(self):
+        """Directly invoke the route handler extracted from _fetch_with_playwright."""
+        import unittest.mock as mock
+
+        fake_page = mock.MagicMock()
+        fake_page.url = "https://safe.com"
+        fake_browser = mock.MagicMock()
+        fake_browser.new_page.return_value = fake_page
+        fake_playwright = mock.MagicMock()
+        fake_playwright.chromium.launch.return_value = fake_browser
+        sync_mod = mock.MagicMock()
+        sync_mod.sync_playwright.return_value.__enter__.return_value = fake_playwright
+
+        # Make goto assert that route was registered first
+        def assert_route_before_goto(*args, **kwargs):
+            assert fake_page.route.called, "route must be registered before goto"
+            return mock.DEFAULT
+        fake_page.goto.side_effect = assert_route_before_goto
+
+        with mock.patch.dict("sys.modules", {"playwright.sync_api": sync_mod}):
+            from url_xray.fetcher import _fetch_with_playwright
+            _fetch_with_playwright("https://safe.com")
+
+        route_handler = fake_page.route.call_args[0][1]
+        assert route_handler is not None
+
+        # Verify goto was actually called (assertion inside side_effect passed)
+        fake_page.goto.assert_called_once()
+
+        class FR:
+            def __init__(self, u, nav):
+                self._u, self._n = u, nav
+            @property
+            def url(self):
+                return self._u
+            def is_navigation_request(self):
+                return self._n
+
+        class Fo:
+            def __init__(self, u, nav=True):
+                self.request = FR(u, nav)
+                self.continued = False
+                self.aborted = False
+                self.abort_error = None
+            def continue_(self):
+                self.continued = True
+            def abort(self, ec=None):
+                self.aborted = True
+                self.abort_error = ec
+
+        safe = Fo("https://safe.com", nav=True)
+        route_handler(safe)
+        assert safe.continued
+        assert not safe.aborted
+
+        bad = Fo("http://192.168.1.1/admin", nav=True)
+        route_handler(bad)
+        assert bad.aborted
+        assert bad.abort_error == "blockedbyclient"
+
+        sub = Fo("http://192.168.1.1/pixel.gif", nav=False)
+        route_handler(sub)
+        assert sub.continued
+        assert not sub.aborted
+
+
+# ── LLM truncation: call_llm with real httpx mock (finish_reason=length) ──
+
+
+class TestCallLLMTruncation:
+    """call_llm raises LLMTruncatedError when finish_reason=length with partial content."""
+
+    def test_call_llm_raises_on_length(self):
+        """Mock httpx.Client to return finish_reason=length and verify LLMTruncatedError."""
+        from unittest.mock import patch, MagicMock
+        from url_xray.llm import call_llm, LLMTruncatedError
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {
+            "choices": [{
+                "message": {"content": "## One-Line Verdict\n3.5\n\nPartial info here"},
+                "finish_reason": "length",
+            }]
+        }
+
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = False
+        mock_client.post.return_value = mock_resp
+
+        with patch("url_xray.llm.httpx.Client", return_value=mock_client):
+            with pytest.raises(LLMTruncatedError) as exc_info:
+                call_llm("test prompt", api_key="k", base_url="http://x", model="m")
+
+        assert "3.5" in exc_info.value.partial_content
+        assert "Partial info here" in exc_info.value.partial_content
+
+
+# ── Analyzer-level truncation: partial content preserved, warning before content ──
+
+
+class TestAnalyzerTruncation:
+    """teardown handles LLMTruncatedError: partial status, warning before partial content."""
+
+    def test_truncated_keeps_partial_content_warning_first(self):
+        from unittest.mock import patch
+        from url_xray.llm import LLMTruncatedError
+
+        with patch("url_xray.analyzer.call_llm") as mock_llm, \
+             patch("url_xray.analyzer.fetch_page") as mock_fetch, \
+             patch("url_xray.analyzer.build_tech_info") as mock_tech:
+            mock_fetch.return_value = _mock_fetch_ok(url="https://long-content.com")
+            mock_tech.return_value = "域名: long-content.com"
+            mock_llm.side_effect = LLMTruncatedError("## 一句话结论\n部分内容")
+
+            result = teardown("https://long-content.com", "k", "http://x", "m")
+
+        assert result["fetch_status"] == "partial"
+        assert result["error"] == "LLM response truncated (finish_reason=length)"
+        assert "部分内容" in result["report"]
+        assert "截断警告" in result["report"]
+        # Warning must appear BEFORE the partial content, not after
+        idx_warn = result["report"].index("截断警告")
+        idx_content = result["report"].index("部分内容")
+        assert idx_warn < idx_content, "warning should precede partial content"
+
+
+# ── Sitemap 500 returns error, not ok ──
+
+
+class TestSitemap500:
+    """check_sitemap returns (0, 'error') on 500."""
+
+    def test_sitemap_500_is_error(self):
+        from unittest.mock import patch, MagicMock
+        import httpx
+
+        error_resp = MagicMock(spec=httpx.Response)
+        error_resp.status_code = 500
+        error_resp.text = "Internal Server Error"
+
+        with patch("url_xray.fetcher._fetch_safe", return_value=error_resp):
+            from url_xray.fetcher import check_sitemap
+            count, status = check_sitemap("https://example.com")
+        assert count == 0
+        assert status == "error"
+
+
+# ── GitHub 404 skips releases ──
+
+
+class TestGithub404SkipsReleases:
+    """GitHub API 404: api_data={}, api_error set, releases not called."""
+
+    def test_github_404_skips_releases(self):
+        from unittest.mock import patch, MagicMock
+        import httpx
+
+        repo_404 = MagicMock(spec=httpx.Response)
+        repo_404.status_code = 404
+        repo_404.headers = {}
+
+        with patch("url_xray.fetcher.fetch_page", return_value={
+            "url": "https://github.com/nonexistent/ghost",
+            "error": None, "title": "", "body_text": "", "body_text_length": 0,
+        }), patch("url_xray.fetcher.httpx.Client") as mock_cls:
+            mc = MagicMock()
+            mc.__enter__.return_value = mc
+            mc.__exit__.return_value = False
+            mc.get.return_value = repo_404
+            mock_cls.return_value = mc
+
+            from url_xray.fetcher import fetch_github_info
+            result = fetch_github_info("https://github.com/nonexistent/ghost")
+
+        assert result.get("github_api_data") == {}
+        assert result.get("github_api_error") == "GitHub repo not found (404)"
+        assert mc.get.call_count == 1  # only repo API, no releases call
+
+
+# ── Prompt date + evidence rules (merged into 1 test per language) ──
+
+
+class TestPromptDateAndEvidence:
+    """Prompt includes today's date and correct evidence rules."""
+
+    def test_zh_prompt_has_date_and_evidence_rules(self):
+        from unittest.mock import patch
+        from datetime import date
+
+        captured, fn = _capture_prompt()
+        with patch("url_xray.analyzer.call_llm", side_effect=fn), \
+             patch("url_xray.analyzer.fetch_page") as mf, \
+             patch("url_xray.analyzer.build_tech_info") as mt:
+            mf.return_value = _mock_fetch_ok()
+            mt.return_value = "域名: example.com"
+            teardown("https://example.com", "k", "http://x", "m")
+
+        p = captured["prompt"]
+        assert date.today().isoformat() in p
+        assert "证据规则" in p
+        assert "既不能证明是 SPA，也不能证明不是 SPA" in p, "rule 4 should be bidirectional"
+        assert "更新活跃度必须为 N/A" in p, "rule 6 should mandate N/A without timestamps"
+
+    def test_en_prompt_has_date_and_evidence_rules(self):
+        from unittest.mock import patch
+        from datetime import date
+
+        captured, fn = _capture_prompt("## One-Line Verdict\nok")
+        with patch("url_xray.analyzer.call_llm", side_effect=fn), \
+             patch("url_xray.analyzer.fetch_page") as mf, \
+             patch("url_xray.analyzer.build_tech_info") as mt:
+            mf.return_value = _mock_fetch_ok()
+            mt.return_value = "domain: example.com"
+            teardown("https://example.com", "k", "http://x", "m", lang="en")
+
+        p = captured["prompt"]
+        assert date.today().isoformat() in p
+        assert "Evidence Rules" in p
+        assert "proves neither that it IS a SPA nor" in p, "rule 4 should be bidirectional in EN"
+        assert "MUST be N/A" in p, "rule 6 should mandate N/A without timestamps in EN"
+
+
 class TestGithubApiPartial:
     """ISSUE 4b: GitHub API data should allow partial report even when page fails."""
 
@@ -619,3 +873,23 @@ class TestGithubReleaseData:
         api_data = result.get("github_api_data", {})
         assert api_data.get("release_tag") == "v2.0.0"
         assert api_data.get("release_date") == "2025-05-01T00:00:00Z"
+
+
+class TestFallbackErrorReason:
+    """LLM exception path writes failure reason into fallback report."""
+
+    def test_fallback_contains_error_reason(self):
+        from unittest.mock import patch
+        with patch("url_xray.analyzer.call_llm") as mock_llm, \
+             patch("url_xray.analyzer.fetch_page") as mf, \
+             patch("url_xray.analyzer.build_tech_info") as mt:
+            mf.return_value = _mock_fetch_ok(url="https://fallback-test.com")
+            mt.return_value = "域名: fallback-test.com"
+            mock_llm.side_effect = RuntimeError("Connection reset by peer")
+
+            result = teardown("https://fallback-test.com", "k", "http://x", "m")
+
+        assert "失败原因" in result["report"]
+        assert "Connection reset by peer" in result["report"]
+        assert "LLM 分析失败" in result["report"]
+        assert result["fetch_status"] == "partial"

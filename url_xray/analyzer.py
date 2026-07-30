@@ -1,6 +1,7 @@
 """Core analyzer — ties fetcher + LLM together, generates reports."""
 
 from datetime import datetime
+from typing import Optional
 
 from .fetcher import (
     detect_type,
@@ -10,7 +11,32 @@ from .fetcher import (
     extract_source_name,
     DEFAULT_SYSTEM_MESSAGE,
 )
-from .llm import get_prompts, call_llm
+from .llm import get_prompts, call_llm, LLMTruncatedError
+
+
+# Short, high-priority evidence rules injected into every analysis prompt
+# to constrain the model from conflating weak signals with facts.
+EVIDENCE_RULES_ZH = (
+    "\n\n--- 证据规则（必须遵守）---\n"
+    "1. 页面自述（如\"百万用户\"\"全球领先\"）必须标为 page claim，不能当作事实。\n"
+    "2. 页面的 external_links 不是 backlinks（反链），只是出站链接。\n"
+    "3. 路由返回 200 只表示可达，不代表功能可用（可能是 SPA catch-all）。\n"
+    "4. 未检测到框架（frameworks_detected 为空）既不能证明是 SPA，也不能证明不是 SPA。\n"
+    "5. 没有带来源的流量数字一律不输出（不得猜测或编造）。\n"
+    "6. 仅有新模型名称不能证明更新活跃；如果没有明确的提交、发布或页面时间戳，更新活跃度必须为 N/A，不能给0到5分。\n"
+    "--- 证据规则结束 ---"
+)
+
+EVIDENCE_RULES_EN = (
+    "\n\n--- Evidence Rules (must follow) ---\n"
+    "1. Page self-claims (e.g. 'millions of users', 'industry leader') must be labeled as page claim, not fact.\n"
+    "2. Page external_links are outbound links, NOT backlinks.\n"
+    "3. A route returning 200 only proves reachability, not functional (could be SPA catch-all).\n"
+    "4. No frameworks detected proves neither that it IS a SPA nor that it is NOT a SPA.\n"
+    "5. Do not output any traffic numbers without a stated source. Never guess or fabricate.\n"
+    "6. A new model name alone does not prove active updates — without explicit commit, release, or page timestamps, update activity MUST be N/A, not 0-5.\n"
+    "--- End Evidence Rules ---"
+)
 
 
 def teardown(
@@ -119,6 +145,13 @@ def teardown(
 
     source = extract_source_name(url)
 
+    # Inject today's ISO date so the model can judge whether domain dates
+    # are in the future relative to "now".
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+
+    # Select evidence rules by language
+    evidence_rules = EVIDENCE_RULES_ZH if lang == "zh" else EVIDENCE_RULES_EN
+
     # Step 5: Format prompt
     prompt = template.format(
         title=title[:200],
@@ -126,6 +159,7 @@ def teardown(
         tech_info=tech_info,
         source=source,
     )
+    prompt += f"\n\nAnalysis date (today): {today_iso}" + evidence_rules
 
     # Step 6: Call LLM with system message for injection isolation (WP3)
     try:
@@ -137,10 +171,29 @@ def teardown(
             system_message=DEFAULT_SYSTEM_MESSAGE,
         )
         result["report"] = report
-    except Exception as e:
-        result["error"] = f"LLM call failed: {e}"
+    except LLMTruncatedError as e:
+        # Response was cut off by max_tokens — keep partial content with
+        # a prominent warning. Do not silently discard, do not retry.
         result["fetch_status"] = "partial"
-        result["report"] = _fallback_report(url, url_type, page_data, tech_info, result["fetch_status"])
+        result["error"] = "LLM response truncated (finish_reason=length)"
+        warning = (
+            "\n\n---\n\n"
+            "> ⚠️ **截断警告 / Truncation Warning**: LLM 输出因达到 "
+            "max_tokens 被截断，以下内容可能不完整。\n\n"
+        ) if lang == "zh" else (
+            "\n\n---\n\n"
+            "> ⚠️ **Truncation Warning**: The LLM output was cut off at "
+            "max_tokens. The content below may be incomplete.\n\n"
+        )
+        result["report"] = warning + e.partial_content
+    except Exception as e:
+        reason = str(e)
+        # Strip any API key from the error message — never leak credentials
+        if api_key and len(api_key) > 4:
+            reason = reason.replace(api_key, "***")
+        result["error"] = f"LLM call failed: {reason}"
+        result["fetch_status"] = "partial"
+        result["report"] = _fallback_report(url, url_type, page_data, tech_info, result["fetch_status"], error_reason=reason)
 
     return result
 
@@ -224,18 +277,24 @@ url-xray CLI 使用 httpx 做静态抓取，无法执行 JavaScript。可用的�
 """
 
 
-def _fallback_report(url: str, url_type: str, page_data: dict, tech_info: str, fetch_status: str = "partial") -> str:
-    """Generate a basic report without LLM (fallback when API fails)."""
+def _fallback_report(url: str, url_type: str, page_data: dict, tech_info: str, fetch_status: str = "partial", error_reason: Optional[str] = None) -> str:
+    """Generate a basic report without LLM (fallback when API fails).
+
+    If error_reason is provided, a short reason banner is shown at the top.
+    """
     date = datetime.now().strftime("%Y-%m-%d")
     title = page_data.get("title", url)
+
+    reason_line = ""
+    if error_reason:
+        reason_line = f"> 失败原因：{error_reason}\n"
 
     return f"""# {title}
 
 > 分析日期：{date} | URL: {url}
 > ⚠️ LLM 分析失败，以下为基础数据（无 AI 分析）
 > 抓取状态：{fetch_status}
-
-## 基础数据
+{reason_line}## 基础数据
 
 {tech_info}
 

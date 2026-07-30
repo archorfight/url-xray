@@ -3,6 +3,17 @@
 import json
 import httpx
 
+
+class LLMTruncatedError(Exception):
+    """Raised when the LLM response was cut off (finish_reason=length).
+
+    Carries the partial content so callers can still use what was generated.
+    """
+
+    def __init__(self, partial_content: str, message: str = ""):
+        self.partial_content = partial_content
+        super().__init__(message or "LLM response truncated (finish_reason=length)")
+
 # ============ Chinese Prompts ============
 PROMPTS_ZH = {
     "website": """你是专业的网站分析师。以下是网站「{title}」的技术数据和页面内容。
@@ -379,4 +390,9 @@ def call_llm(
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        content = (choice["message"].get("content") or "")
+        finish_reason = choice.get("finish_reason")
+        if finish_reason == "length":
+            raise LLMTruncatedError(content)
+        return content

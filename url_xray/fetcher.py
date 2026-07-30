@@ -243,20 +243,46 @@ def _fetch_with_playwright(url: str) -> dict:
         return {"error": "Playwright not installed. Run: pip install playwright && playwright install chromium"}
 
     data = {"url": url, "error": None}
+
+    # Pre-flight: validate the initial navigation target BEFORE launching browser
+    try:
+        validate_url(url)
+    except ValueError as e:
+        data["error"] = str(e)
+        return data
+
+    browser = None
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(user_agent=_UA())
+
+            # Security: abort navigation requests to unsafe targets
+            # BEFORE the request leaves the browser. This covers
+            # server-side redirects during the initial goto and
+            # client-side navigations. Sub-resources are never validated.
+            def _abort_unsafe_navigations(route):
+                if route.request.is_navigation_request():
+                    try:
+                        validate_url(route.request.url)
+                    except ValueError:
+                        route.abort("blockedbyclient")
+                        return
+                route.continue_()
+
+            page.route("**/*", _abort_unsafe_navigations)
+
             page.goto(url, wait_until="networkidle", timeout=20000)
             page.wait_for_timeout(2000)  # extra wait for dynamic content
 
-            # Validate final URL after redirects (security)
+            # Validate final URL after redirects (security backstop)
             final_url = page.url
             try:
                 validate_url(final_url)
             except ValueError:
                 data["error"] = f"Redirected to blocked URL: {final_url}"
                 browser.close()
+                browser = None
                 return data
 
             data["status_code"] = 200
@@ -275,8 +301,15 @@ def _fetch_with_playwright(url: str) -> dict:
             data["external_links"] = 0  # approximate
 
             browser.close()
+            browser = None
     except Exception as e:
         data["error"] = str(e)
+    finally:
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
 
     return data
 
